@@ -121,13 +121,8 @@ class BattleScreen:
 
     def _draw_header(self, battle: Battle) -> None:
         self.text(30, 922, "REDITUS ARCANUM", 34, TEXT)
-        self.text(32, 893, "전략은 카드로, 승리는 타이밍으로", 16, MUTED)
         self.text(1214, 925, f"TURN  {battle.round:02d}", 22, GOLD)
         self.text(1215, 894, "BATTLE STAGE  /  PROTOTYPE", 14, MUTED)
-        self._draw_chip(390, 922, "출혈", (137, 85, 101))
-        self._draw_chip(452, 922, "쇠약", (109, 93, 146))
-        self._draw_chip(514, 922, "기절", (139, 109, 62))
-        self._draw_chip(576, 922, "취약", (143, 73, 81))
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
@@ -136,7 +131,6 @@ class BattleScreen:
     def _draw_order(self, battle: Battle) -> None:
         self.panel(28, 789, 1384, 75, PANEL)
         self.text(45, 842, "행동 순서", 16, GOLD)
-        self.text(45, 817, "속도 내림차순 · 동률은 주사위", 12, MUTED)
         start_x = 262
         step = 183
         for index, entry in enumerate(battle.order):
