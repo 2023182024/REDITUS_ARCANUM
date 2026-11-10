@@ -63,6 +63,11 @@ def starter_deck(character_id: str) -> list[SkillCard]:
 
 
 def enemy_skills(enemy_id: str) -> list[SkillCard]:
+    if enemy_id == "floor1_guardian":
+        return [
+            SkillCard("회랑 강타", "무거운 보스 공격", 1.28, 0.82),
+            SkillCard("봉인 파동", "적중 시 쇠약", 1.0, 1.35, status_key="weak", status_amount=0.2),
+        ]
     if enemy_id == "glass_wraith":
         return [
             SkillCard("유리 파편", "적중 시 쇠약", 1.0, 1.35, status_key="weak", status_amount=0.18),

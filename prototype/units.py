@@ -9,6 +9,18 @@ from cards import SkillCard, enemy_skills, starter_deck
 from status_effects import StatusCollection
 
 
+CHARACTER_DATA = {
+    "A": {"name": "A · 정밀 기사", "hp": 100, "attack": 100, "speed": 100, "accent": (106, 200, 185), "trait": "입력 판정 구간이 넓음"},
+    "B": {"name": "B · 회피 검사", "hp": 80, "attack": 110, "speed": 105, "accent": (116, 175, 226), "trait": "방어 PERFECT 시 피해 회피"},
+    "C": {"name": "C · 비전 기록자", "hp": 130, "attack": 90, "speed": 80, "accent": (185, 147, 224), "trait": "휴식 시 카드 1장 추가"},
+    "D": {"name": "D · 연쇄 검희", "hp": 90, "attack": 115, "speed": 120, "accent": (229, 173, 111), "trait": "PERFECT마다 공격력 중첩"},
+}
+
+
+def character_info(character_id: str) -> dict:
+    return CHARACTER_DATA[character_id]
+
+
 @dataclass
 class Combatant:
     unit_id: str
@@ -73,25 +85,21 @@ class Enemy(Combatant):
         return random.choice(self.skills)
 
 
-def create_party() -> list[PlayerCharacter]:
-    setup = [
-        ("A", "A · 정밀 기사", 100, 100, 100, (106, 200, 185), "입력 판정 구간이 넓음"),
-        ("B", "B · 회피 검사", 80, 110, 105, (116, 175, 226), "방어 PERFECT 시 피해 회피"),
-        ("C", "C · 비전 기록자", 130, 90, 80, (185, 147, 224), "휴식 시 카드 1장 추가"),
-        ("D", "D · 연쇄 검희", 90, 115, 120, (229, 173, 111), "PERFECT마다 공격력 중첩"),
-    ]
+def create_party(character_ids: list[str] | None = None) -> list[PlayerCharacter]:
+    selected_ids = character_ids if character_ids is not None else list(CHARACTER_DATA)
     party: list[PlayerCharacter] = []
-    for character_id, name, hp, attack, speed, accent, trait in setup:
+    for character_id in selected_ids:
+        data = character_info(character_id)
         character = PlayerCharacter(
             unit_id=character_id,
-            name=name,
+            name=data["name"],
             side="player",
-            hp=hp,
-            max_hp=hp,
-            attack=attack,
-            speed=speed,
-            accent=accent,
-            trait_text=trait,
+            hp=data["hp"],
+            max_hp=data["hp"],
+            attack=data["attack"],
+            speed=data["speed"],
+            accent=data["accent"],
+            trait_text=data["trait"],
             deck=starter_deck(character_id),
         )
         random.shuffle(character.deck)
@@ -100,7 +108,21 @@ def create_party() -> list[PlayerCharacter]:
     return party
 
 
-def create_enemies() -> list[Enemy]:
+def create_enemies(encounter_id: str = "corridor") -> list[Enemy]:
+    if encounter_id == "floor1_boss":
+        return [
+            Enemy(
+                unit_id="floor1_guardian",
+                name="1층 회랑의 감시자",
+                side="enemy",
+                hp=235,
+                max_hp=235,
+                attack=23,
+                speed=108,
+                accent=(217, 167, 108),
+                skills=enemy_skills("floor1_guardian"),
+            )
+        ]
     return [
         Enemy(
             unit_id="glass_wraith",

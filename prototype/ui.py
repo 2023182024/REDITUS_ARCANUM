@@ -173,7 +173,7 @@ class BattleScreen:
         elif battle.phase == "result":
             self._draw_result(battle)
         elif battle.phase == "victory":
-            self._draw_end_card("전투 승리", "전투 스테이지 프로토타입을 완료했습니다.", True)
+            self._draw_end_card("전투 승리", "1층 맵으로 돌아갑니다.", True)
         elif battle.phase == "defeat":
             self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
         elif battle.phase == "player" and battle.selected_card:
@@ -277,7 +277,6 @@ class BattleScreen:
         self.panel(635, 484, 170, 38, (61, 54, 43), GOLD)
         self.text(720, 503, "다시 전투", 16, GOLD, centered=True)
         self.replay_rect = (635, 484, 805, 522)
-        self.text(720, 453, "보상 · 맵 이동 · 영입은 이 프로토타입 범위에 포함되지 않습니다.", 12, MUTED, centered=True)
 
     def _draw_party_hands(self, battle: Battle) -> None:
         for index, hero in enumerate(battle.party):

@@ -21,9 +21,11 @@ class Battle:
     GOOD_MULTIPLIER = 1.0
     MISS_MULTIPLIER = 0.5
 
-    def __init__(self) -> None:
-        self.party = create_party()
-        self.enemies = create_enemies()
+    def __init__(self, character_ids: list[str] | None = None, encounter_id: str = "corridor") -> None:
+        self.character_ids = list(character_ids) if character_ids is not None else list("ABCD")
+        self.encounter_id = encounter_id
+        self.party = create_party(self.character_ids)
+        self.enemies = create_enemies(encounter_id)
         self.round = 1
         self.order: list[TurnEntry] = []
         self.order_index = 0
@@ -305,5 +307,5 @@ class Battle:
             self._prepare_actor()
 
     def reset(self) -> None:
-        self.__init__()
+        self.__init__(self.character_ids, self.encounter_id)
 
