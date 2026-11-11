@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+PLAYER_CARD_DAMAGE_SCALE = 0.5
+
+
 @dataclass
 class SkillCard:
     name: str
@@ -59,7 +62,10 @@ def starter_deck(character_id: str) -> list[SkillCard]:
             SkillCard("연속 타격", "빠른 연속 공격", 0.92, 2.35, 0.04, 0.13),
         ],
     }
-    return [basic, *decks[character_id]]
+    player_cards = [basic, *decks[character_id]]
+    for card in player_cards:
+        card.power *= PLAYER_CARD_DAMAGE_SCALE
+    return player_cards
 
 
 def enemy_skills(enemy_id: str) -> list[SkillCard]:
