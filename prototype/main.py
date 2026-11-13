@@ -12,7 +12,7 @@ from battle import Battle
 from campaign import FloorOne
 from campaign_ui import CampaignScreen
 from units import CHARACTER_DATA
-from ui import DESIGN_HEIGHT, DESIGN_WIDTH, HEIGHT, SCALE_X, SCALE_Y, WIDTH
+from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
 
 
 def main() -> None:
@@ -43,13 +43,13 @@ def main() -> None:
                         if mode in ("select", "map", "complete"):
                             mode = "title"
                             selected_character_id = None
-                        else:
+                        elif mode != "battle":
                             running = False
                     elif mode == "select" and event.key == p2d.SDLK_RETURN and selected_character_id:
                         floor_map = FloorOne()
                         mode = "map"
-                    elif mode == "battle" and battle and event.key in (p2d.SDLK_SPACE, p2d.SDLK_RETURN):
-                        battle.submit_timing()
+                    elif mode == "battle" and battle:
+                        screen.handle_key(battle, event.key)
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -80,8 +80,6 @@ def main() -> None:
                                 active_node_id = node_id
                                 return_to_map_at = None
                                 mode = "battle"
-                    elif mode == "battle" and battle:
-                        screen.handle_click(battle, x, y)
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         mode = "title"
                         selected_character_id = None

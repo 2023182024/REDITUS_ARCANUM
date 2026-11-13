@@ -1,4 +1,4 @@
-"""Pico2D rendering and mouse hit regions for the combat stage."""
+"""Pico2D rendering and keyboard controls for the combat stage."""
 
 from __future__ import annotations
 
@@ -15,14 +15,8 @@ DESIGN_WIDTH, DESIGN_HEIGHT = 1440, 960
 WIDTH, HEIGHT = 1280, 720
 SCALE_X = WIDTH / DESIGN_WIDTH
 SCALE_Y = HEIGHT / DESIGN_HEIGHT
-GROUP_X = 24
-GROUP_GAP = 8
-GROUP_WIDTH = 342
-GROUP_Y = 20
-GROUP_HEIGHT = 252
-CARD_W = 60
-CARD_H = 108
-CARD_GAP = 4
+CARD_W = 170
+CARD_H = 145
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -46,10 +40,9 @@ class BattleScreen:
         for character_id in "ABCD":
             path = asset_root / "images" / f"{character_id}.png"
             self.portraits[character_id] = p2d.load_image(str(path))
-        self.card_rects: dict[tuple[str, int], tuple[int, int, int, int]] = {}
-        self.rest_rects: dict[str, tuple[int, int, int, int]] = {}
-        self.enemy_rects: dict[str, tuple[int, int, int, int]] = {}
-        self.replay_rect = (0, 0, 0, 0)
+        self.action_cursor = 0
+        self.target_enemy_id: str | None = None
+        self.focus_actor_id: str | None = None
 
     @staticmethod
     def _find_font() -> str:
@@ -108,15 +101,13 @@ class BattleScreen:
         self.rect(x, y, w, h, border, filled=False)
 
     def draw(self, battle: Battle, now: float) -> None:
-        self.card_rects.clear()
-        self.rest_rects.clear()
-        self.enemy_rects.clear()
+        self._sync_focus(battle)
         p2d.clear_canvas()
         self.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, INK)
         self._draw_header(battle)
         self._draw_order(battle)
         self._draw_battlefield(battle, now)
-        self._draw_party_hands(battle)
+        self._draw_action_cards(battle)
         p2d.update_canvas()
 
     def _draw_header(self, battle: Battle) -> None:
@@ -150,23 +141,20 @@ class BattleScreen:
                 self.text(x + 82, 825, "DOWN", 12, MUTED, centered=True)
 
     def _draw_battlefield(self, battle: Battle, now: float) -> None:
-        self.panel(28, 286, 1384, 492, (19, 25, 39), (54, 66, 86))
-        self.text(48, 753, "BATTLE  /  잿빛 회랑", 16, MUTED)
-        self.text(1085, 753, "TIMING COMMAND  ·  SPACE / CLICK", 13, GOLD)
-        self.line(54, 393, 1385, 393, (44, 57, 77))
-        self.line(54, 390, 1385, 390, (29, 38, 54))
-        self.rect(47, 286, 1345, 74, (17, 22, 35))
-        self.panel(48, 298, 1344, 44, (24, 31, 46), (45, 55, 72))
+        self.panel(28, 160, 1384, 618, (19, 25, 39), (54, 66, 86))
+        self.text(48, 753, "전투", 16, MUTED)
+        self.line(270, 187, 1170, 187, (44, 57, 77))
+        self.panel(48, 205, 1344, 44, (24, 31, 46), (45, 55, 72))
         if battle.log_lines:
-            self.text(64, 320, "전투 기록", 13, GOLD)
-            self.text(154, 320, battle.log_lines[0][:80], 14, TEXT)
+            self.text(64, 227, "전투 기록", 13, GOLD)
+            self.text(154, 227, battle.log_lines[0][:80], 14, TEXT)
 
-        hero_x = (174, 348, 522, 696)
-        for hero, x in zip(battle.party, hero_x):
-            self._draw_hero(hero, x, battle)
-        enemy_x = (1044, 1254)
-        for enemy, x in zip(battle.enemies, enemy_x):
-            self._draw_enemy(enemy, x, battle)
+        hero_y = (700, 535, 370, 205)
+        for hero, y in zip(battle.party, hero_y):
+            self._draw_hero(hero, 150, y, battle)
+        enemy_y = (585, 335)
+        for enemy, y in zip(battle.enemies, enemy_y):
+            self._draw_enemy(enemy, 1270, y, battle)
 
         if battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
@@ -178,58 +166,58 @@ class BattleScreen:
             self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
         elif battle.phase == "player" and battle.selected_card:
             card = battle.selected_card
-            self.panel(464, 453, 510, 130, (27, 34, 50), GOLD)
-            self.text(719, 554, f"선택한 스킬  ·  {card.name}", 22, GOLD, centered=True)
-            self.text(719, 519, card.description, 16, TEXT, centered=True)
-            self.text(719, 484, "공격할 적을 클릭하세요", 16, MUTED, centered=True)
-        elif battle.phase == "player" and battle.active:
-            self.panel(497, 468, 445, 100, (27, 34, 50), battle.active.accent)
-            self.text(719, 535, f"{battle.active.name}  ·  ACTION", 21, battle.active.accent, centered=True)
-            self.text(719, 501, "손패에서 카드를 고르거나 휴식하세요", 15, TEXT, centered=True)
+            self.panel(458, 265, 470, 132, (27, 34, 50), GOLD)
+            self.text(693, 355, card.name, 24, GOLD, centered=True)
+            self.text(693, 318, card.description, 16, TEXT, centered=True)
+            self.text(693, 286, "공격할 적을 선택하세요", 15, MUTED, centered=True)
+            target = self._focused_enemy(battle)
+            if target:
+                target_index = battle.enemies.index(target)
+                target_y = (585, 335)[min(target_index, 1)]
+                self._draw_target_arrow(930, 478, 1170, target_y)
 
-    def _draw_hero(self, hero: PlayerCharacter, x: int, battle: Battle) -> None:
+    def _draw_hero(self, hero: PlayerCharacter, x: int, y: int, battle: Battle) -> None:
         active = hero is battle.active
-        selected = active and battle.phase in ("attack_timing", "defense_timing", "result")
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
-        self.circle(x, 525, 91, glow, filled=True)
+        self.circle(x, y, 48, glow, filled=True)
         if hero.alive:
-            self.circle(x, 525, 92, border, filled=False)
-            self.image(self.portraits[hero.unit_id], x, 535, 132, 198)
+            self.circle(x, y, 49, border, filled=False)
+            self.image(self.portraits[hero.unit_id], x, y, 72, 108)
         else:
-            self.circle(x, 525, 66, (70, 75, 86), filled=True)
-            self.text(x, 528, "DOWN", 18, MUTED, centered=True)
-        self.text(x, 410, hero.unit_id, 18, border, centered=True)
-        if active and battle.phase == "player":
-            self.text(x, 384, "NOW", 12, GOLD, centered=True)
+            self.circle(x, y, 36, (70, 75, 86), filled=True)
+            self.text(x, y, "DOWN", 14, MUTED, centered=True)
+        self.text(x, y + 83, hero.name, 13, border, centered=True)
+        self._bar(x - 54, y + 62, 108, 6, hero.hp / hero.max_hp, hero.accent)
+        self.text(x, y + 43, f"HP {hero.hp}/{hero.max_hp}", 10, MUTED, centered=True)
         if hero.unit_id == "D" and hero.perfect_stacks:
-            self.text(x, 445, f"PERFECT +{hero.perfect_stacks}", 12, GOLD, centered=True)
+            self.text(x, y - 66, f"PERFECT +{hero.perfect_stacks}", 11, GOLD, centered=True)
         if hero.statuses.snapshot():
             first = hero.statuses.snapshot()[0]
-            self._draw_chip(x - 39, 363, first.label, (99, 58, 70))
+            self._draw_chip(x - 28, y - 87, first.label, (99, 58, 70))
 
-    def _draw_enemy(self, enemy: Enemy, x: int, battle: Battle) -> None:
-        target = enemy is battle.attack_target and battle.phase in ("attack_timing", "result")
+    def _draw_enemy(self, enemy: Enemy, x: int, y: int, battle: Battle) -> None:
+        selected_target = enemy.unit_id == self.target_enemy_id and battle.phase == "player" and battle.selected_card
+        target = selected_target or (enemy is battle.attack_target and battle.phase in ("attack_timing", "result"))
         radius_color = GOLD if target else enemy.accent
-        self.enemy_rects[enemy.unit_id] = (x - 80, 400, x + 80, 677)
         if not enemy.alive:
-            self.circle(x, 535, 40, (72, 68, 81), filled=True)
-            self.text(x, 535, "DOWN", 14, MUTED, centered=True)
+            self.circle(x, y, 40, (72, 68, 81), filled=True)
+            self.text(x, y, "DOWN", 14, MUTED, centered=True)
         else:
-            self.circle(x, 535, 65, radius_color, filled=False)
-            self.circle(x, 535, 52, (46, 40, 63), filled=True)
-            self.circle(x, 535, 36, enemy.accent, filled=True)
-            self.circle(x, 535, 25, (31, 25, 45), filled=True)
-            self.circle(x, 535, 14, (232, 203, 238), filled=True)
+            self.circle(x, y, 65, radius_color, filled=False)
+            self.circle(x, y, 52, (46, 40, 63), filled=True)
+            self.circle(x, y, 36, enemy.accent, filled=True)
+            self.circle(x, y, 25, (31, 25, 45), filled=True)
+            self.circle(x, y, 14, (232, 203, 238), filled=True)
             for spoke in range(8):
                 angle = spoke * 0.785398
                 dx, dy = int(70 * __import__("math").cos(angle)), int(70 * __import__("math").sin(angle))
-                self.line(x + dx, 535 + dy, x + int(dx * 1.22), 535 + int(dy * 1.22), enemy.accent)
-        self.text(x, 687, enemy.name, 18, TEXT, centered=True)
-        self._bar(x - 66, 660, 132, 9, enemy.hp / enemy.max_hp, CORAL)
-        self.text(x, 637, f"HP  {enemy.hp}/{enemy.max_hp}   ·   ATK {enemy.attack}   SPD {enemy.speed}", 12, MUTED, centered=True)
+                self.line(x + dx, y + dy, x + int(dx * 1.22), y + int(dy * 1.22), enemy.accent)
+        self.text(x, y - 92, enemy.name, 18, TEXT, centered=True)
+        self._bar(x - 66, y - 113, 132, 9, enemy.hp / enemy.max_hp, CORAL)
+        self.text(x, y - 136, f"HP {enemy.hp}/{enemy.max_hp} · ATK {enemy.attack} · SPD {enemy.speed}", 11, MUTED, centered=True)
         for i, effect in enumerate(enemy.statuses.snapshot()[:2]):
-            self._draw_chip(x - 61 + i * 91, 610, effect.label, (110, 57, 68))
+            self._draw_chip(x - 61 + i * 91, y - 163, effect.label, (110, 57, 68))
 
     def _bar(self, x: int, y: int, w: int, h: int, ratio: float, color: tuple[int, int, int]) -> None:
         self.rect(x, y, w, h, (43, 49, 62))
@@ -248,7 +236,7 @@ class BattleScreen:
             card = battle.selected_card
             target = battle.attack_target.name if battle.attack_target else "적"
             self.text(720, 612, f"{card.name if card else '공격'}  →  {target}", 22, GOLD, centered=True)
-            self.text(720, 580, "정확한 순간에 SPACE 또는 클릭", 15, TEXT, centered=True)
+            self.text(720, 580, "정확한 순간에 SPACE", 15, TEXT, centered=True)
         self._timing_gauge(battle, now)
         self.text(720, 478, "GOOD", 12, MUTED, centered=True)
 
@@ -274,75 +262,119 @@ class BattleScreen:
         self.panel(472, 462, 496, 174, (26, 32, 47), border)
         self.text(720, 585, title, 30, border, centered=True)
         self.text(720, 548, message, 16, TEXT, centered=True)
-        self.panel(635, 484, 170, 38, (61, 54, 43), GOLD)
-        self.text(720, 503, "다시 전투", 16, GOLD, centered=True)
-        self.replay_rect = (635, 484, 805, 522)
+        if not victory:
+            self.text(720, 503, "SPACE · 다시 전투", 16, GOLD, centered=True)
 
-    def _draw_party_hands(self, battle: Battle) -> None:
-        for index, hero in enumerate(battle.party):
-            x = GROUP_X + index * (GROUP_WIDTH + GROUP_GAP)
-            is_active = hero is battle.active and battle.phase == "player"
-            border = GOLD if is_active else LINE
-            self.panel(x, GROUP_Y, GROUP_WIDTH, GROUP_HEIGHT, (30, 36, 51) if is_active else PANEL, border)
-            self.text(x + 12, 247, f"{hero.name}", 16, hero.accent)
-            self.text(x + 12, 224, f"HP {hero.hp}/{hero.max_hp}", 13, TEXT)
-            self.text(x + 163, 224, f"ATK {hero.attack}  ·  SPD {hero.effective_speed()}", 12, MUTED)
-            self._bar(x + 12, 207, GROUP_WIDTH - 24, 6, hero.hp / hero.max_hp, hero.accent)
-            if hero.statuses.snapshot():
-                status_text = "   ".join(effect.display() for effect in hero.statuses.snapshot()[:2])
-                self.text(x + 12, 187, status_text[:30], 12, (218, 150, 145))
-            else:
-                self.text(x + 12, 187, hero.trait_text, 12, MUTED)
-            self.text(x + 12, 170, f"손패 {len(hero.hand)}/5", 12, MUTED)
+    def _draw_target_arrow(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Draw the target-selection arrow from the center to the enemy side."""
+        self.line(x1, y1, x2, y2, GOLD)
+        self.line(x2, y2, x2 - 28, y2 + 18, GOLD)
+        self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
 
-            for card_index, card in enumerate(hero.hand[:5]):
-                card_x = x + 10 + card_index * (CARD_W + CARD_GAP)
-                card_y = 56
-                self.card_rects[(hero.unit_id, card_index)] = (card_x, card_y, card_x + CARD_W, card_y + CARD_H)
-                selected = card is battle.selected_card
-                available = is_active and battle.phase == "player"
-                fill = (53, 48, 39) if selected else ((43, 50, 65) if available else (33, 38, 51))
-                edge = GOLD if selected else (hero.accent if available else (61, 69, 84))
-                self.panel(card_x, card_y, CARD_W, CARD_H, fill, edge)
-                self.rect(card_x + 4, card_y + CARD_H - 5, CARD_W - 8, 3, hero.accent)
-                title = card.name.replace(" ", "")
-                self.text(card_x + CARD_W / 2, card_y + 84, title[:2], 12, TEXT if available else MUTED, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 68, title[2:6], 12, TEXT if available else MUTED, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 46, f"×{card.power:.2f}", 12, GOLD, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 26, card.short_effect(), 12, MINT if card.status_key else MUTED, centered=True)
-            rest = (x + GROUP_WIDTH - 82, 27, x + GROUP_WIDTH - 12, 50)
-            self.rest_rects[hero.unit_id] = rest
-            self.panel(rest[0], rest[1], rest[2] - rest[0], rest[3] - rest[1], (57, 50, 41) if is_active else PANEL_LIGHT, GOLD if is_active else LINE)
-            self.text((rest[0] + rest[2]) / 2, 39, "휴식", 13, GOLD if is_active else MUTED, centered=True)
-        self.text(30, 12, "카드 선택 → 적 클릭 → SPACE / 클릭  ·  휴식은 카드 보충", 12, MUTED)
+    def _draw_action_cards(self, battle: Battle) -> None:
+        """Show cards only while the active player is choosing a skill."""
+        if battle.phase != "player" or not battle.active or battle.selected_card:
+            return
+        hero = battle.active
+        action_indices = list(range(min(len(hero.hand), 5))) + [5]
+        if self.action_cursor not in action_indices:
+            self.action_cursor = action_indices[0]
+        self.text(720, 730, f"{hero.name} · 사용할 스킬을 선택하세요", 16, hero.accent, centered=True)
+        card_positions = ((460, 560), (680, 560), (460, 375), (680, 375), (460, 190))
+        for card_index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], card_positions)):
+            focused = card_index == self.action_cursor
+            border = GOLD if focused else hero.accent
+            fill = (53, 48, 39) if focused else (39, 45, 61)
+            self.panel(card_x, card_y, CARD_W, CARD_H, fill, border)
+            self.rect(card_x + 7, card_y + CARD_H - 8, CARD_W - 14, 4, hero.accent)
+            self.text(card_x + CARD_W / 2, card_y + 112, card.name, 17, TEXT, centered=True)
+            self.text(card_x + CARD_W / 2, card_y + 80, card.description[:15], 12, MUTED, centered=True)
+            self.text(card_x + CARD_W / 2, card_y + 48, f"피해 배율 ×{card.power:.2f}", 13, GOLD, centered=True)
+            self.text(card_x + CARD_W / 2, card_y + 24, card.short_effect(), 13, MINT if card.status_key else MUTED, centered=True)
+
+        rest = (680, 190, 850, 335)
+        rest_focused = self.action_cursor == 5
+        self.panel(rest[0], rest[1], rest[2] - rest[0], rest[3] - rest[1], (57, 50, 41) if rest_focused else PANEL_LIGHT, GOLD if rest_focused else LINE)
+        self.text((rest[0] + rest[2]) / 2, 267, "휴식", 18, GOLD if rest_focused else TEXT, centered=True)
+        self.text((rest[0] + rest[2]) / 2, 237, "카드 보충", 12, MUTED, centered=True)
+
+    def _sync_focus(self, battle: Battle) -> None:
+        if battle.active and battle.active.unit_id != self.focus_actor_id:
+            self.focus_actor_id = battle.active.unit_id
+            self.action_cursor = 0
+            self.target_enemy_id = None
+        if battle.living_enemies and not any(enemy.unit_id == self.target_enemy_id for enemy in battle.living_enemies):
+            self.target_enemy_id = battle.living_enemies[0].unit_id
+
+    def _focused_enemy(self, battle: Battle) -> Enemy | None:
+        living = battle.living_enemies
+        if not living:
+            return None
+        for enemy in living:
+            if enemy.unit_id == self.target_enemy_id:
+                return enemy
+        self.target_enemy_id = living[0].unit_id
+        return living[0]
+
+    def handle_key(self, battle: Battle, key: int) -> None:
+        """Handle all battle decisions with Space and the arrow keys."""
+        self._sync_focus(battle)
+        if key == p2d.SDLK_SPACE:
+            if battle.phase in ("attack_timing", "defense_timing"):
+                battle.submit_timing()
+            elif battle.phase == "defeat":
+                battle.reset()
+                self.focus_actor_id = None
+            elif battle.phase == "player" and battle.active:
+                hero = battle.active
+                if battle.selected_card:
+                    target = self._focused_enemy(battle)
+                    if target:
+                        battle.begin_attack(hero, battle.selected_card, target)
+                elif self.action_cursor == 5:
+                    battle.rest(hero)
+                    self.action_cursor = 0
+                elif 0 <= self.action_cursor < len(hero.hand):
+                    battle.select_card(hero, hero.hand[self.action_cursor])
+                    self._focused_enemy(battle)
+            return
+
+        if battle.phase != "player" or not battle.active:
+            return
+        self._sync_focus(battle)
+        if key not in (p2d.SDLK_LEFT, p2d.SDLK_RIGHT, p2d.SDLK_UP, p2d.SDLK_DOWN):
+            return
+
+        if battle.selected_card:
+            living = battle.living_enemies
+            if not living:
+                return
+            focused = self._focused_enemy(battle)
+            current = living.index(focused) if focused else 0
+            step = -1 if key in (p2d.SDLK_LEFT, p2d.SDLK_UP) else 1
+            self.target_enemy_id = living[(current + step) % len(living)].unit_id
+            return
+
+        hero = battle.active
+        action_indices = list(range(min(len(hero.hand), 5))) + [5]
+        coordinates = {0: (0, 0), 1: (1, 0), 2: (0, 1), 3: (1, 1), 4: (0, 2), 5: (1, 2)}
+        if self.action_cursor not in action_indices:
+            self.action_cursor = action_indices[0]
+        col, row = coordinates[self.action_cursor]
+        if key == p2d.SDLK_LEFT:
+            candidates = [i for i in action_indices if coordinates[i][1] == row and coordinates[i][0] < col]
+            if candidates:
+                self.action_cursor = max(candidates, key=lambda i: coordinates[i][0])
+        elif key == p2d.SDLK_RIGHT:
+            candidates = [i for i in action_indices if coordinates[i][1] == row and coordinates[i][0] > col]
+            if candidates:
+                self.action_cursor = min(candidates, key=lambda i: coordinates[i][0])
+        else:
+            direction = -1 if key == p2d.SDLK_UP else 1
+            candidates = [i for i in action_indices if (coordinates[i][1] - row) * direction > 0]
+            if candidates:
+                self.action_cursor = min(candidates, key=lambda i: (abs(coordinates[i][1] - row), abs(coordinates[i][0] - col)))
 
     @staticmethod
     def _inside(x: int, y: int, rect: tuple[int, int, int, int]) -> bool:
         return rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]
-
-    def handle_click(self, battle: Battle, x: int, y: int) -> None:
-        if battle.phase in ("attack_timing", "defense_timing"):
-            battle.submit_timing()
-            return
-        if battle.phase in ("victory", "defeat"):
-            if self._inside(x, y, self.replay_rect):
-                battle.reset()
-            return
-        if battle.phase != "player" or not battle.active:
-            return
-        hero = battle.active
-        for (character_id, card_index), rect in self.card_rects.items():
-            if character_id == hero.unit_id and self._inside(x, y, rect):
-                battle.select_card(hero, hero.hand[card_index])
-                return
-        rest = self.rest_rects.get(hero.unit_id)
-        if rest and self._inside(x, y, rest):
-            battle.rest(hero)
-            return
-        if battle.selected_card:
-            for enemy in battle.living_enemies:
-                rect = self.enemy_rects.get(enemy.unit_id)
-                if rect and self._inside(x, y, rect):
-                    battle.begin_attack(hero, battle.selected_card, enemy)
-                    return
-            battle._note("공격할 적을 클릭하세요.")

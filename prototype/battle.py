@@ -179,7 +179,7 @@ class Battle:
         if self.phase != "player" or hero is not self.active or card not in hero.hand:
             return
         self.selected_card = card
-        self._note(f"선택 · {card.name} · 적을 클릭해 대상을 정하세요.")
+        self._note(f"선택 · {card.name} · 화살표로 적을 골라 SPACE를 누르세요.")
 
     def rest(self, hero: PlayerCharacter) -> None:
         if self.phase != "player" or hero is not self.active:
