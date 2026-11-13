@@ -16,6 +16,16 @@ class TurnEntry:
     die: int
 
 
+@dataclass(frozen=True)
+class AttackEffectState:
+    source_id: str
+    target_id: str
+    source_side: str
+    quality: str
+    damage: int
+    started_at: float
+
+
 class Battle:
     PERFECT_MULTIPLIER = 1.6
     GOOD_MULTIPLIER = 1.0
@@ -44,6 +54,7 @@ class Battle:
         self.timing_bonus = 0.0
         self.result_text = ""
         self.result_color = (240, 236, 218)
+        self.attack_effect: AttackEffectState | None = None
         self.result_until = 0.0
         self.log_lines: list[str] = []
         self.roll_by_id: dict[str, int] = {}
@@ -181,6 +192,15 @@ class Battle:
         self.selected_card = card
         self._note(f"선택 · {card.name} · 화살표로 적을 골라 SPACE를 누르세요.")
 
+    def cancel_card_selection(self, hero: PlayerCharacter) -> bool:
+        if self.phase != "player" or hero is not self.active or not self.selected_card:
+            return False
+        card = self.selected_card
+        self.selected_card = None
+        self.attack_target = None
+        self._note(f"{hero.name} · {card.name} 대상 선택을 취소했습니다.")
+        return True
+
     def rest(self, hero: PlayerCharacter) -> None:
         if self.phase != "player" or hero is not self.active:
             return
@@ -242,6 +262,7 @@ class Battle:
         stack_scale = 1 + hero.perfect_stacks * 0.12 if hero.unit_id == "D" else 1.0
         damage = hero.attack * card.power * multiplier * weak_scale * stack_scale
         dealt = target.receive_hit(damage)
+        self._record_attack_effect(hero, target, quality, dealt)
         hero.make_discard(card)
         if hero.unit_id == "D":
             if quality == "PERFECT":
@@ -276,6 +297,8 @@ class Battle:
             damage = target.receive_hit(source.attack * skill.power * weak_scale * 0.5)
             text = f"{quality} GUARD  ·  {damage} 피해"
             self._note(f"방어 성공 · {target.name}이 피해를 절반으로 줄였습니다.")
+        if damage:
+            self._record_attack_effect(source, target, quality, damage)
         if damage and quality == "MISS" and skill.status_key and target.alive:
             target.statuses.apply(skill.status_key, 1, skill.status_amount)
             self._note(f"{target.name} · {skill.short_effect()} 상태가 적용되었습니다.")
@@ -283,6 +306,18 @@ class Battle:
         self.phase = "result"
         self.result_after = "actor"
         self.result_until = time.monotonic() + 0.9
+
+    def _record_attack_effect(
+        self, source: Combatant, target: Combatant, quality: str, damage: int
+    ) -> None:
+        self.attack_effect = AttackEffectState(
+            source_id=source.unit_id,
+            target_id=target.unit_id,
+            source_side=source.side,
+            quality=quality,
+            damage=damage,
+            started_at=time.monotonic(),
+        )
 
     def _show_result(self, text: str, quality: str) -> None:
         self.result_text = text

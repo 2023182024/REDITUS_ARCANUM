@@ -1,8 +1,10 @@
-"""Pico2D rendering and keyboard controls for the combat stage."""
+"""Pico2D rendering and mouse/keyboard controls for the combat stage."""
 
 from __future__ import annotations
 
+import math
 import os
+import time
 from pathlib import Path
 
 import pico2d as p2d
@@ -17,6 +19,13 @@ SCALE_X = WIDTH / DESIGN_WIDTH
 SCALE_Y = HEIGHT / DESIGN_HEIGHT
 CARD_W = 170
 CARD_H = 145
+CARD_POSITIONS = ((460, 560), (680, 560), (460, 375), (680, 375), (460, 190))
+REST_RECT = (680, 190, 850, 335)
+ENEMY_POSITIONS = ((1270, 585), (1270, 335))
+PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
+CANCEL_TARGET_RECT = (810, 268, 916, 310)
+CARD_ANIMATION_DURATION = 0.38
+CARD_ANIMATION_STAGGER = 0.06
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -40,9 +49,23 @@ class BattleScreen:
         for character_id in "ABCD":
             path = asset_root / "images" / f"{character_id}.png"
             self.portraits[character_id] = p2d.load_image(str(path))
+        effect_files = {
+            "A": "A_precision.png",
+            "B": "B_twin_slash.png",
+            "C": "C_arcane_burst.png",
+            "D": "D_chain_flurry.png",
+            "enemy": "enemy_impact.png",
+            "perfect": "perfect_flash.png",
+        }
+        self.attack_effects = {
+            key: p2d.load_image(str(asset_root / "images" / "effects" / filename))
+            for key, filename in effect_files.items()
+        }
         self.action_cursor = 0
         self.target_enemy_id: str | None = None
         self.focus_actor_id: str | None = None
+        self.focus_round: int | None = None
+        self.card_animation_started_at = 0.0
 
     @staticmethod
     def _find_font() -> str:
@@ -90,11 +113,12 @@ class BattleScreen:
 
     @staticmethod
     def circle(x: int, y: int, radius: int, color: tuple[int, int, int], filled: bool = False) -> None:
-        p2d.draw_circle(round(x * SCALE_X), round(y * SCALE_Y), round(radius * 0.8), *color, filled=filled)
+        p2d.draw_circle(round(x * SCALE_X), round(y * SCALE_Y), round(radius * min(SCALE_X, SCALE_Y)), *color, filled=filled)
 
     @staticmethod
     def image(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
-        image.draw(round(x * SCALE_X), round(y * SCALE_Y), round(w * SCALE_X), round(h * SCALE_Y))
+        scale = min(SCALE_X, SCALE_Y)
+        image.draw(round(x * SCALE_X), round(y * SCALE_Y), round(w * scale), round(h * scale))
 
     def panel(self, x: int, y: int, w: int, h: int, fill: tuple[int, int, int] = PANEL, border: tuple[int, int, int] = LINE) -> None:
         self.rect(x, y, w, h, fill)
@@ -107,7 +131,7 @@ class BattleScreen:
         self._draw_header(battle)
         self._draw_order(battle)
         self._draw_battlefield(battle, now)
-        self._draw_action_cards(battle)
+        self._draw_action_cards(battle, now)
         p2d.update_canvas()
 
     def _draw_header(self, battle: Battle) -> None:
@@ -149,12 +173,11 @@ class BattleScreen:
             self.text(64, 227, "전투 기록", 13, GOLD)
             self.text(154, 227, battle.log_lines[0][:80], 14, TEXT)
 
-        hero_y = (700, 535, 370, 205)
-        for hero, y in zip(battle.party, hero_y):
-            self._draw_hero(hero, 150, y, battle)
-        enemy_y = (585, 335)
-        for enemy, y in zip(battle.enemies, enemy_y):
-            self._draw_enemy(enemy, 1270, y, battle)
+        for hero, (hero_x, hero_y) in zip(battle.party, PARTY_POSITIONS):
+            self._draw_hero(hero, hero_x, hero_y, battle)
+        for enemy, (enemy_x, enemy_y) in zip(battle.enemies, ENEMY_POSITIONS):
+            self._draw_enemy(enemy, enemy_x, enemy_y, battle)
+        self._draw_attack_effect(battle, now)
 
         if battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
@@ -169,32 +192,35 @@ class BattleScreen:
             self.panel(458, 265, 470, 132, (27, 34, 50), GOLD)
             self.text(693, 355, card.name, 24, GOLD, centered=True)
             self.text(693, 318, card.description, 16, TEXT, centered=True)
-            self.text(693, 286, "공격할 적을 선택하세요", 15, MUTED, centered=True)
+            self.text(625, 286, "공격할 적을 선택하세요", 15, MUTED, centered=True)
+            cancel = CANCEL_TARGET_RECT
+            self.panel(cancel[0], cancel[1], cancel[2] - cancel[0], cancel[3] - cancel[1], PANEL_LIGHT, GOLD)
+            self.text((cancel[0] + cancel[2]) / 2, (cancel[1] + cancel[3]) / 2, "취소", 14, GOLD, centered=True)
             target = self._focused_enemy(battle)
             if target:
-                target_index = battle.enemies.index(target)
-                target_y = (585, 335)[min(target_index, 1)]
+                _, target_y = self._enemy_position(battle, target)
                 self._draw_target_arrow(930, 478, 1170, target_y)
 
     def _draw_hero(self, hero: PlayerCharacter, x: int, y: int, battle: Battle) -> None:
         active = hero is battle.active
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
-        self.circle(x, y, 48, glow, filled=True)
+        self.circle(x, y, 60, glow, filled=True)
         if hero.alive:
-            self.circle(x, y, 49, border, filled=False)
-            self.image(self.portraits[hero.unit_id], x, y, 72, 108)
+            self.circle(x, y, 60, border, filled=False)
+            self.image(self.portraits[hero.unit_id], x, y, 110, 165)
         else:
-            self.circle(x, y, 36, (70, 75, 86), filled=True)
+            self.circle(x, y, 40, (70, 75, 86), filled=True)
             self.text(x, y, "DOWN", 14, MUTED, centered=True)
-        self.text(x, y + 83, hero.name, 13, border, centered=True)
-        self._bar(x - 54, y + 62, 108, 6, hero.hp / hero.max_hp, hero.accent)
-        self.text(x, y + 43, f"HP {hero.hp}/{hero.max_hp}", 10, MUTED, centered=True)
+        info_x = 225
+        self.text(info_x, y + 34, hero.name, 15, border)
+        self._bar(info_x, y + 14, 178, 7, hero.hp / hero.max_hp, hero.accent)
+        self.text(info_x, y - 10, f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}", 11, MUTED)
+        effects = hero.statuses.snapshot()[:1]
+        for index, effect in enumerate(effects):
+            self._draw_chip(info_x + 28 + index * 66, y - 28, effect.label, (99, 58, 70))
         if hero.unit_id == "D" and hero.perfect_stacks:
-            self.text(x, y - 66, f"PERFECT +{hero.perfect_stacks}", 11, GOLD, centered=True)
-        if hero.statuses.snapshot():
-            first = hero.statuses.snapshot()[0]
-            self._draw_chip(x - 28, y - 87, first.label, (99, 58, 70))
+            self._draw_chip(info_x + 28 + len(effects) * 66, y - 28, f"P+{hero.perfect_stacks}", (99, 81, 43))
 
     def _draw_enemy(self, enemy: Enemy, x: int, y: int, battle: Battle) -> None:
         selected_target = enemy.unit_id == self.target_enemy_id and battle.phase == "player" and battle.selected_card
@@ -211,13 +237,67 @@ class BattleScreen:
             self.circle(x, y, 14, (232, 203, 238), filled=True)
             for spoke in range(8):
                 angle = spoke * 0.785398
-                dx, dy = int(70 * __import__("math").cos(angle)), int(70 * __import__("math").sin(angle))
+                dx, dy = int(70 * math.cos(angle)), int(70 * math.sin(angle))
                 self.line(x + dx, y + dy, x + int(dx * 1.22), y + int(dy * 1.22), enemy.accent)
         self.text(x, y - 92, enemy.name, 18, TEXT, centered=True)
         self._bar(x - 66, y - 113, 132, 9, enemy.hp / enemy.max_hp, CORAL)
         self.text(x, y - 136, f"HP {enemy.hp}/{enemy.max_hp} · ATK {enemy.attack} · SPD {enemy.speed}", 11, MUTED, centered=True)
         for i, effect in enumerate(enemy.statuses.snapshot()[:2]):
             self._draw_chip(x - 61 + i * 91, y - 163, effect.label, (110, 57, 68))
+
+    def _draw_attack_effect(self, battle: Battle, now: float) -> None:
+        effect = battle.attack_effect
+        if not effect:
+            return
+        elapsed = now - effect.started_at
+        duration = 0.62
+        if elapsed < 0 or elapsed > duration:
+            return
+
+        units = (*battle.party, *battle.enemies)
+        source = next((unit for unit in units if unit.unit_id == effect.source_id), None)
+        target = next((unit for unit in units if unit.unit_id == effect.target_id), None)
+        if not source or not target:
+            return
+
+        sprite_key = source.unit_id if source.side == "player" else "enemy"
+        sprite = self.attack_effects[sprite_key]
+        progress = max(0.0, min(1.0, elapsed / duration))
+        eased = 1.0 - (1.0 - progress) ** 3
+        scale = (0.58 + 0.55 * eased) * (1.16 if effect.quality == "PERFECT" else 1.0)
+        opacity = (1.0 - progress) ** 1.35
+        dimensions = {
+            "A": (260, 174),
+            "B": (214, 214),
+            "C": (200, 200),
+            "D": (218, 218),
+            "enemy": (185, 185),
+        }
+        width, height = dimensions[sprite_key]
+        x, y = self._unit_position(battle, target)
+        sprite.opacify(opacity)
+        self.image(sprite, x, y, round(width * scale), round(height * scale))
+        sprite.opacify(1.0)
+
+        if effect.quality == "PERFECT":
+            flash = self.attack_effects["perfect"]
+            flash_progress = min(1.0, elapsed / 0.34)
+            flash_scale = 0.42 + 0.82 * flash_progress
+            flash.opacify(max(0.0, 1.0 - flash_progress))
+            self.image(flash, x, y, round(124 * flash_scale), round(124 * flash_scale))
+            flash.opacify(1.0)
+
+        number_y = y + 76 + min(22, elapsed * 42)
+        number_color = (255, 226, 149) if effect.quality == "PERFECT" else (242, 238, 232)
+        self.text(x, number_y, f"-{effect.damage}", 22, number_color, centered=True)
+
+    @staticmethod
+    def _unit_position(battle: Battle, unit) -> tuple[int, int]:
+        if unit.side == "player":
+            index = battle.party.index(unit)
+            return PARTY_POSITIONS[min(index, len(PARTY_POSITIONS) - 1)]
+        index = battle.enemies.index(unit)
+        return ENEMY_POSITIONS[min(index, len(ENEMY_POSITIONS) - 1)]
 
     def _bar(self, x: int, y: int, w: int, h: int, ratio: float, color: tuple[int, int, int]) -> None:
         self.rect(x, y, w, h, (43, 49, 62))
@@ -271,7 +351,7 @@ class BattleScreen:
         self.line(x2, y2, x2 - 28, y2 + 18, GOLD)
         self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
 
-    def _draw_action_cards(self, battle: Battle) -> None:
+    def _draw_action_cards(self, battle: Battle, now: float) -> None:
         """Show cards only while the active player is choosing a skill."""
         if battle.phase != "player" or not battle.active or battle.selected_card:
             return
@@ -280,29 +360,134 @@ class BattleScreen:
         if self.action_cursor not in action_indices:
             self.action_cursor = action_indices[0]
         self.text(720, 730, f"{hero.name} · 사용할 스킬을 선택하세요", 16, hero.accent, centered=True)
-        card_positions = ((460, 560), (680, 560), (460, 375), (680, 375), (460, 190))
-        for card_index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], card_positions)):
+        hero_index = battle.party.index(hero)
+        origin_x, origin_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
+        for card_index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
+            elapsed = now - self.card_animation_started_at - card_index * CARD_ANIMATION_STAGGER
+            progress = max(0.0, min(1.0, elapsed / CARD_ANIMATION_DURATION))
+            eased = 1.0 - (1.0 - progress) ** 3
+            scale = 0.08 + 0.92 * eased
+            target_center_x = card_x + CARD_W / 2
+            target_center_y = card_y + CARD_H / 2
+            center_x = origin_x + (target_center_x - origin_x) * eased
+            center_y = origin_y + (target_center_y - origin_y) * eased
+            draw_w = max(2, round(CARD_W * scale))
+            draw_h = max(2, round(CARD_H * scale))
+            draw_x = round(center_x - draw_w / 2)
+            draw_y = round(center_y - draw_h / 2)
             focused = card_index == self.action_cursor
             border = GOLD if focused else hero.accent
             fill = (53, 48, 39) if focused else (39, 45, 61)
-            self.panel(card_x, card_y, CARD_W, CARD_H, fill, border)
-            self.rect(card_x + 7, card_y + CARD_H - 8, CARD_W - 14, 4, hero.accent)
-            self.text(card_x + CARD_W / 2, card_y + 112, card.name, 17, TEXT, centered=True)
-            self.text(card_x + CARD_W / 2, card_y + 80, card.description[:15], 12, MUTED, centered=True)
-            self.text(card_x + CARD_W / 2, card_y + 48, f"피해 배율 ×{card.power:.2f}", 13, GOLD, centered=True)
-            self.text(card_x + CARD_W / 2, card_y + 24, card.short_effect(), 13, MINT if card.status_key else MUTED, centered=True)
+            self.panel(draw_x, draw_y, draw_w, draw_h, fill, border)
+            if progress >= 0.74:
+                self.rect(card_x + 7, card_y + CARD_H - 8, CARD_W - 14, 4, hero.accent)
+            if progress >= 0.82:
+                self.text(card_x + CARD_W / 2, card_y + 112, card.name, 17, TEXT, centered=True)
+                self.text(card_x + CARD_W / 2, card_y + 80, card.description[:15], 12, MUTED, centered=True)
+                self.text(card_x + CARD_W / 2, card_y + 48, f"피해 배율 ×{card.power:.2f}", 13, GOLD, centered=True)
+                self.text(card_x + CARD_W / 2, card_y + 24, card.short_effect(), 13, MINT if card.status_key else MUTED, centered=True)
 
-        rest = (680, 190, 850, 335)
+        rest = REST_RECT
         rest_focused = self.action_cursor == 5
         self.panel(rest[0], rest[1], rest[2] - rest[0], rest[3] - rest[1], (57, 50, 41) if rest_focused else PANEL_LIGHT, GOLD if rest_focused else LINE)
         self.text((rest[0] + rest[2]) / 2, 267, "휴식", 18, GOLD if rest_focused else TEXT, centered=True)
         self.text((rest[0] + rest[2]) / 2, 237, "카드 보충", 12, MUTED, centered=True)
 
+    def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
+        """Use the pointer to focus cards or the nearest living enemy."""
+        if battle.phase != "player" or not battle.active:
+            return
+        self._sync_focus(battle)
+        if battle.selected_card:
+            target = self._nearest_enemy(battle, x, y)
+            if target:
+                self.target_enemy_id = target.unit_id
+            return
+        if not self._card_animation_complete(battle):
+            return
+
+        for index, (card_x, card_y) in enumerate(CARD_POSITIONS[:len(battle.active.hand[:5])]):
+            if self._inside(x, y, (card_x, card_y, card_x + CARD_W, card_y + CARD_H)):
+                self.action_cursor = index
+                return
+        if self._inside(x, y, REST_RECT):
+            self.action_cursor = 5
+
+    def handle_mouse_click(self, battle: Battle, x: int, y: int) -> None:
+        """Handle mouse selection, targeting, timing, and retry actions."""
+        self._sync_focus(battle)
+        if battle.phase in ("attack_timing", "defense_timing"):
+            battle.submit_timing()
+            return
+        if battle.phase == "defeat":
+            battle.reset()
+            self.focus_actor_id = None
+            self.focus_round = None
+            return
+        if battle.phase != "player" or not battle.active:
+            return
+
+        hero = battle.active
+        if battle.selected_card:
+            if self._inside(x, y, CANCEL_TARGET_RECT):
+                battle.cancel_card_selection(hero)
+                return
+            target = self._nearest_enemy(battle, x, y)
+            if target and self._inside_enemy_area(battle, target, x, y):
+                self.target_enemy_id = target.unit_id
+                battle.begin_attack(hero, battle.selected_card, target)
+            return
+        if not self._card_animation_complete(battle):
+            return
+
+        for index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
+            if self._inside(x, y, (card_x, card_y, card_x + CARD_W, card_y + CARD_H)):
+                self.action_cursor = index
+                battle.select_card(hero, card)
+                target = self._nearest_enemy(battle, x, y)
+                if target:
+                    self.target_enemy_id = target.unit_id
+                return
+        if self._inside(x, y, REST_RECT):
+            self.action_cursor = 5
+            battle.rest(hero)
+            self.action_cursor = 0
+
+    def _card_animation_complete(self, battle: Battle, now: float | None = None) -> bool:
+        card_count = min(len(battle.active.hand), len(CARD_POSITIONS)) if battle.active else 0
+        if card_count <= 0:
+            return True
+        current = time.monotonic() if now is None else now
+        last_card_start = self.card_animation_started_at + (card_count - 1) * CARD_ANIMATION_STAGGER
+        return current >= last_card_start + CARD_ANIMATION_DURATION
+
+    @staticmethod
+    def _enemy_position(battle: Battle, enemy: Enemy) -> tuple[int, int]:
+        index = battle.enemies.index(enemy)
+        return ENEMY_POSITIONS[min(index, len(ENEMY_POSITIONS) - 1)]
+
+    def _nearest_enemy(self, battle: Battle, x: int, y: int) -> Enemy | None:
+        if not battle.living_enemies:
+            return None
+        return min(
+            battle.living_enemies,
+            key=lambda enemy: (
+                (self._enemy_position(battle, enemy)[0] - x) ** 2
+                + (self._enemy_position(battle, enemy)[1] - y) ** 2
+            ),
+        )
+
+    def _inside_enemy_area(self, battle: Battle, enemy: Enemy, x: int, y: int) -> bool:
+        enemy_x, enemy_y = self._enemy_position(battle, enemy)
+        return abs(x - enemy_x) <= 110 and enemy_y - 180 <= y <= enemy_y + 85
+
     def _sync_focus(self, battle: Battle) -> None:
-        if battle.active and battle.active.unit_id != self.focus_actor_id:
+        if battle.active and (battle.active.unit_id != self.focus_actor_id or battle.round != self.focus_round):
             self.focus_actor_id = battle.active.unit_id
+            self.focus_round = battle.round
             self.action_cursor = 0
             self.target_enemy_id = None
+            self.card_animation_started_at = time.monotonic()
         if battle.living_enemies and not any(enemy.unit_id == self.target_enemy_id for enemy in battle.living_enemies):
             self.target_enemy_id = battle.living_enemies[0].unit_id
 
@@ -319,12 +504,18 @@ class BattleScreen:
     def handle_key(self, battle: Battle, key: int) -> None:
         """Handle all battle decisions with Space and the arrow keys."""
         self._sync_focus(battle)
+        if key == p2d.SDLK_ESCAPE and battle.phase == "player" and battle.active and battle.selected_card:
+            battle.cancel_card_selection(battle.active)
+            return
+        if battle.phase == "player" and battle.active and not battle.selected_card and not self._card_animation_complete(battle):
+            return
         if key == p2d.SDLK_SPACE:
             if battle.phase in ("attack_timing", "defense_timing"):
                 battle.submit_timing()
             elif battle.phase == "defeat":
                 battle.reset()
                 self.focus_actor_id = None
+                self.focus_round = None
             elif battle.phase == "player" and battle.active:
                 hero = battle.active
                 if battle.selected_card:

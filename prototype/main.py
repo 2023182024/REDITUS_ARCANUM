@@ -18,6 +18,7 @@ from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
     p2d.open_canvas(WIDTH, HEIGHT)
+    p2d.SDL_SetHint(p2d.SDL_HINT_RENDER_SCALE_QUALITY, b"1")
     try:
         core = p2d.pico2d
         if getattr(core, "window", None) and getattr(core, "SDL_SetWindowTitle", None):
@@ -40,16 +41,22 @@ def main() -> None:
                     running = False
                 elif event.type == p2d.SDL_KEYDOWN:
                     if event.key == p2d.SDLK_ESCAPE:
-                        if mode in ("select", "map", "complete"):
+                        if mode == "battle" and battle:
+                            screen.handle_key(battle, event.key)
+                        elif mode in ("select", "map", "complete"):
                             mode = "title"
                             selected_character_id = None
-                        elif mode != "battle":
+                        else:
                             running = False
                     elif mode == "select" and event.key == p2d.SDLK_RETURN and selected_character_id:
                         floor_map = FloorOne()
                         mode = "map"
                     elif mode == "battle" and battle:
                         screen.handle_key(battle, event.key)
+                elif event.type == p2d.SDL_MOUSEMOTION and mode == "battle" and battle:
+                    x = round(event.x / SCALE_X)
+                    y = round((HEIGHT - event.y) / SCALE_Y)
+                    screen.handle_mouse_move(battle, x, y)
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -83,6 +90,8 @@ def main() -> None:
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         mode = "title"
                         selected_character_id = None
+                    elif mode == "battle" and battle:
+                        screen.handle_mouse_click(battle, x, y)
             now = time.monotonic()
             if mode == "title":
                 screen.draw_title()
