@@ -27,6 +27,9 @@ PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 CANCEL_TARGET_RECT = (810, 268, 916, 310)
 CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
+CARD_HOVER_DURATION = 0.16
+CARD_HOVER_SCALE = 0.10
+CARD_HOVER_LIFT = 13
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -73,6 +76,9 @@ class BattleScreen:
         self.focus_actor_id: str | None = None
         self.focus_round: int | None = None
         self.card_animation_started_at = 0.0
+        self.hovered_card_index: int | None = None
+        self.card_hover_progress: dict[int, float] = {}
+        self.card_hover_last_at = time.monotonic()
 
     @staticmethod
     def _find_font() -> str:
@@ -359,7 +365,7 @@ class BattleScreen:
         self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
 
     def _draw_action_cards(self, battle: Battle, now: float) -> None:
-        """Draw portrait skill cards with a blank art window and text in fixed bands."""
+        """Draw portrait skill cards and smoothly enlarge the card under the pointer."""
         if battle.phase != "player" or not battle.active or battle.selected_card:
             return
         hero = battle.active
@@ -369,51 +375,66 @@ class BattleScreen:
         self.text(720, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
         hero_index = battle.party.index(hero)
         origin_x, origin_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
-        for card_index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
+        card_entries = list(enumerate(zip(hero.hand[:5], CARD_POSITIONS)))
+        if self.hovered_card_index is not None:
+            card_entries.sort(key=lambda entry: entry[0] == self.hovered_card_index)
+
+        hover_delta = max(0.0, min(0.05, now - self.card_hover_last_at))
+        self.card_hover_last_at = now
+        for card_index, (card, (card_x, card_y)) in card_entries:
             elapsed = now - self.card_animation_started_at - card_index * CARD_ANIMATION_STAGGER
             progress = max(0.0, min(1.0, elapsed / CARD_ANIMATION_DURATION))
             eased = 1.0 - (1.0 - progress) ** 3
-            scale = 0.08 + 0.92 * eased
+            spawn_scale = 0.08 + 0.92 * eased
             target_center_x = card_x + CARD_W / 2
             target_center_y = card_y + CARD_H / 2
             center_x = origin_x + (target_center_x - origin_x) * eased
             center_y = origin_y + (target_center_y - origin_y) * eased
-            draw_w = max(2, round(CARD_W * scale))
-            draw_h = max(2, round(CARD_H * scale))
+
+            hover_progress = self.card_hover_progress.get(card_index, 0.0)
+            if card_index == self.hovered_card_index:
+                hover_progress = min(1.0, hover_progress + hover_delta / CARD_HOVER_DURATION)
+            else:
+                hover_progress = max(0.0, hover_progress - hover_delta / CARD_HOVER_DURATION)
+            self.card_hover_progress[card_index] = hover_progress
+            hover_eased = hover_progress * hover_progress * (3.0 - 2.0 * hover_progress)
+            visual_scale = spawn_scale * (1.0 + CARD_HOVER_SCALE * hover_eased)
+            center_y += CARD_HOVER_LIFT * hover_eased
+
+            draw_w = max(2, round(CARD_W * visual_scale))
+            draw_h = max(2, round(CARD_H * visual_scale))
             draw_x = round(center_x - draw_w / 2)
             draw_y = round(center_y - draw_h / 2)
             focused = card_index == self.action_cursor
-            fill = (52, 48, 42) if focused else (31, 37, 50)
-            if focused:
-                self.rect(draw_x - 3, draw_y - 3, draw_w + 6, draw_h + 6, GOLD)
-            self.rect(draw_x, draw_y, draw_w, draw_h, fill)
+            self.rect(draw_x, draw_y, draw_w, draw_h, (31, 37, 50))
 
             if progress >= 0.82:
                 title_color = GOLD if focused else hero.accent
+                visual_bottom = center_y - draw_h / 2
                 self.text(
-                    card_x + CARD_W / 2,
-                    card_y + CARD_H - 22,
+                    center_x,
+                    visual_bottom + draw_h - 22 * visual_scale,
                     card.name,
-                    14,
+                    max(10, round(14 * visual_scale)),
                     title_color,
                     centered=True,
                 )
                 description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
-                description_start_y = card_y + (58 if len(description_lines) > 1 else 51)
+                description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * visual_scale
                 for line_index, line in enumerate(description_lines):
                     self.text(
-                        card_x + CARD_W / 2,
-                        description_start_y - line_index * 14,
+                        center_x,
+                        description_start_y - line_index * 14 * visual_scale,
                         line,
-                        11,
+                        max(9, round(11 * visual_scale)),
                         TEXT,
                         centered=True,
                     )
                 self.text(
-                    card_x + CARD_W / 2,
-                    card_y + 20,
+                    center_x,
+                    visual_bottom + 20 * visual_scale,
                     f"×{card.power:.2f} · {card.short_effect()}",
-                    10,
+                    max(9, round(10 * visual_scale)),
                     MINT if card.status_key else MUTED,
                     centered=True,
                 )
@@ -436,22 +457,32 @@ class BattleScreen:
         self.text(center_x, rest[1] + 77, "카드 보충", 12, MUTED, centered=True)
 
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
-        """Use the pointer to focus cards or the nearest living enemy."""
+        """Use pointer hover to focus cards or the nearest living enemy."""
         if battle.phase != "player" or not battle.active:
+            self.hovered_card_index = None
             return
         self._sync_focus(battle)
         if battle.selected_card:
+            self.hovered_card_index = None
             target = self._nearest_enemy(battle, x, y)
             if target:
                 self.target_enemy_id = target.unit_id
             return
-        if not self._card_animation_complete(battle):
-            return
-
-        for index, (card_x, card_y) in enumerate(CARD_POSITIONS[:len(battle.active.hand[:5])]):
+        card_positions = CARD_POSITIONS[:len(battle.active.hand[:5])]
+        for index, (card_x, card_y) in enumerate(card_positions):
             if self._inside(x, y, (card_x, card_y, card_x + CARD_W, card_y + CARD_H)):
                 self.action_cursor = index
+                self.hovered_card_index = index
                 return
+
+        previous_hover = self.hovered_card_index
+        if previous_hover is not None and previous_hover < len(card_positions):
+            card_x, card_y = card_positions[previous_hover]
+            if self._inside(x, y, self._card_hover_rect(previous_hover, card_x, card_y)):
+                self.action_cursor = previous_hover
+                return
+
+        self.hovered_card_index = None
         if self._inside(x, y, REST_RECT):
             self.action_cursor = 5
 
@@ -471,6 +502,7 @@ class BattleScreen:
 
         hero = battle.active
         if battle.selected_card:
+            self.hovered_card_index = None
             if self._inside(x, y, CANCEL_TARGET_RECT):
                 battle.cancel_card_selection(hero)
                 return
@@ -483,8 +515,14 @@ class BattleScreen:
             return
 
         for index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
-            if self._inside(x, y, (card_x, card_y, card_x + CARD_W, card_y + CARD_H)):
+            card_rect = (
+                self._card_hover_rect(index, card_x, card_y)
+                if index == self.hovered_card_index
+                else (card_x, card_y, card_x + CARD_W, card_y + CARD_H)
+            )
+            if self._inside(x, y, card_rect):
                 self.action_cursor = index
+                self.hovered_card_index = None
                 battle.select_card(hero, card)
                 target = self._nearest_enemy(battle, x, y)
                 if target:
@@ -530,6 +568,9 @@ class BattleScreen:
             self.action_cursor = 0
             self.target_enemy_id = None
             self.card_animation_started_at = time.monotonic()
+            self.hovered_card_index = None
+            self.card_hover_progress.clear()
+            self.card_hover_last_at = self.card_animation_started_at
         if battle.living_enemies and not any(enemy.unit_id == self.target_enemy_id for enemy in battle.living_enemies):
             self.target_enemy_id = battle.living_enemies[0].unit_id
 
@@ -607,6 +648,21 @@ class BattleScreen:
             candidates = [i for i in action_indices if (coordinates[i][1] - row) * direction > 0]
             if candidates:
                 self.action_cursor = min(candidates, key=lambda i: (abs(coordinates[i][1] - row), abs(coordinates[i][0] - col)))
+
+    def _card_hover_rect(self, index: int, x: int, y: int) -> tuple[float, float, float, float]:
+        progress = max(0.0, min(1.0, self.card_hover_progress.get(index, 0.0)))
+        eased = progress * progress * (3.0 - 2.0 * progress)
+        scale = 1.0 + CARD_HOVER_SCALE * eased
+        center_x = x + CARD_W / 2
+        center_y = y + CARD_H / 2 + CARD_HOVER_LIFT * eased
+        width = CARD_W * scale
+        height = CARD_H * scale
+        return (
+            center_x - width / 2,
+            center_y - height / 2,
+            center_x + width / 2,
+            center_y + height / 2,
+        )
 
     @staticmethod
     def _inside(x: int, y: int, rect: tuple[int, int, int, int]) -> bool:
