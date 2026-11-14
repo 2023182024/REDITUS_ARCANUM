@@ -6,11 +6,13 @@ import math
 import os
 import time
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 
 import pico2d as p2d
 
 from battle import Battle
+from cards import SkillCard
 from units import Enemy, PlayerCharacter
 
 
@@ -32,7 +34,7 @@ PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
-CANCEL_TARGET_RECT = (650, 22, 790, 70)
+CANCEL_TARGET_RECT = REST_RECT
 CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
 CARD_HOVER_DURATION = 0.16
@@ -40,6 +42,8 @@ CARD_HOVER_SCALE = 0.10
 CARD_HOVER_LIFT = 17
 CARD_BACKGROUND_INSET = 10
 CARD_FOCUS_PADDING = 4
+CARD_TARGET_CENTER = (720, 480)
+CARD_TARGET_SCALE = 1.08
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -51,6 +55,20 @@ GOLD = (231, 190, 105)
 MINT = (112, 211, 178)
 CORAL = (231, 129, 119)
 BLUE = (116, 172, 226)
+
+
+@dataclass
+class CardMotion:
+    hero_id: str
+    card: SkillCard
+    slot_index: int
+    start_x: float
+    start_y: float
+    end_x: float
+    end_y: float
+    start_scale: float
+    end_scale: float
+    started_at: float
 
 
 class BattleScreen:
@@ -97,6 +115,9 @@ class BattleScreen:
         self.card_hover_last_at = time.monotonic()
         self.turn_focus_progress: dict[str, float] = {}
         self.turn_focus_last_at = time.monotonic()
+        self.selected_card_key: tuple[str, int] | None = None
+        self.selected_card_motion: CardMotion | None = None
+        self.returning_card_motions: dict[tuple[str, int], CardMotion] = {}
 
     @staticmethod
     def _find_font() -> str:
@@ -158,12 +179,16 @@ class BattleScreen:
     def draw(self, battle: Battle, now: float) -> None:
         self._sync_focus(battle)
         self._advance_turn_focus(battle, now)
+        self._sync_selected_card_motion(battle, now)
         p2d.clear_canvas()
         self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self._draw_header(battle)
         self._draw_order(battle)
         self._draw_battlefield(battle, now)
         self._draw_action_cards(battle, now)
+        if battle.phase == "player" and battle.selected_card:
+            self._draw_selected_target_card(battle, now)
+        self._draw_returning_card_motions(battle, now)
         p2d.update_canvas()
 
     def _draw_header(self, battle: Battle) -> None:
@@ -186,6 +211,145 @@ class BattleScreen:
             else:
                 progress = max(0.0, progress - progress_delta)
             self.turn_focus_progress[hero.unit_id] = progress
+
+    @staticmethod
+    def _card_motion_value(motion: CardMotion, now: float) -> tuple[float, float, float, float]:
+        progress = max(0.0, min(1.0, (now - motion.started_at) / CARD_ANIMATION_DURATION))
+        eased = 1.0 - (1.0 - progress) ** 3
+        center_x = motion.start_x + (motion.end_x - motion.start_x) * eased
+        center_y = motion.start_y + (motion.end_y - motion.start_y) * eased
+        scale = motion.start_scale + (motion.end_scale - motion.start_scale) * eased
+        return center_x, center_y, scale, progress
+
+    def _make_returning_motion(
+        self, motion: CardMotion, now: float
+    ) -> CardMotion:
+        center_x, center_y, scale, _ = self._card_motion_value(motion, now)
+        slot_x, slot_y = CARD_POSITIONS[motion.slot_index]
+        return CardMotion(
+            hero_id=motion.hero_id,
+            card=motion.card,
+            slot_index=motion.slot_index,
+            start_x=center_x,
+            start_y=center_y,
+            end_x=slot_x + CARD_W / 2,
+            end_y=slot_y + CARD_H / 2,
+            start_scale=scale,
+            end_scale=1.0,
+            started_at=now,
+        )
+
+    def _sync_selected_card_motion(self, battle: Battle, now: float) -> None:
+        self.returning_card_motions = {
+            key: motion
+            for key, motion in self.returning_card_motions.items()
+            if now - motion.started_at < CARD_ANIMATION_DURATION
+        }
+        if battle.phase != "player":
+            self.selected_card_key = None
+            self.selected_card_motion = None
+            self.returning_card_motions.clear()
+            return
+
+        hero = battle.active
+        card = battle.selected_card
+        selected_key = (hero.unit_id, id(card)) if hero and card else None
+        if selected_key == self.selected_card_key:
+            return
+
+        if self.selected_card_key and self.selected_card_motion:
+            old_key = self.selected_card_key
+            self.returning_card_motions[old_key] = self._make_returning_motion(
+                self.selected_card_motion, now
+            )
+
+        self.selected_card_key = selected_key
+        self.selected_card_motion = None
+        if not hero or not card or card not in hero.hand:
+            return
+
+        slot_index = hero.hand.index(card)
+        slot_x, slot_y = CARD_POSITIONS[slot_index]
+        returning_motion = self.returning_card_motions.pop(selected_key, None)
+        if returning_motion:
+            start_x, start_y, start_scale, _ = self._card_motion_value(returning_motion, now)
+        else:
+            hover_progress = self.card_hover_progress.get(slot_index, 0.0)
+            hover_eased = hover_progress * hover_progress * (3.0 - 2.0 * hover_progress)
+            start_x = slot_x + CARD_W / 2
+            start_y = slot_y + CARD_H / 2 + CARD_HOVER_LIFT * hover_eased
+            start_scale = 1.0 + CARD_HOVER_SCALE * hover_eased
+        target_x, target_y = CARD_TARGET_CENTER
+        self.selected_card_motion = CardMotion(
+            hero_id=hero.unit_id,
+            card=card,
+            slot_index=slot_index,
+            start_x=start_x,
+            start_y=start_y,
+            end_x=target_x,
+            end_y=target_y,
+            start_scale=start_scale,
+            end_scale=CARD_TARGET_SCALE,
+            started_at=now,
+        )
+
+    def _draw_skill_card_face(
+        self,
+        hero: PlayerCharacter,
+        card: SkillCard,
+        center_x: float,
+        center_y: float,
+        visual_scale: float,
+    ) -> None:
+        draw_w = max(2, round(CARD_W * visual_scale))
+        draw_h = max(2, round(CARD_H * visual_scale))
+        self._draw_card_rect(
+            center_x,
+            center_y,
+            draw_w,
+            draw_h,
+            (31, 37, 50),
+            inset=round(CARD_BACKGROUND_INSET * visual_scale),
+        )
+        content_scale = visual_scale * CARD_LAYOUT_SCALE
+        visual_bottom = center_y - draw_h / 2
+        self.text(
+            center_x,
+            visual_bottom + draw_h - 22 * content_scale,
+            card.name,
+            max(10, round(14 * content_scale)),
+            hero.accent,
+            centered=True,
+        )
+        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+        description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
+        for line_index, line in enumerate(description_lines):
+            self.text(
+                center_x,
+                description_start_y - line_index * 14 * content_scale,
+                line,
+                max(9, round(11 * content_scale)),
+                TEXT,
+                centered=True,
+            )
+        self.text(
+            center_x,
+            visual_bottom + 20 * content_scale,
+            f"×{card.power:.2f} · {card.short_effect()}",
+            max(9, round(10 * content_scale)),
+            MINT if card.status_key else MUTED,
+            centered=True,
+        )
+        self.image(self.card_frames[hero.unit_id], center_x, center_y, draw_w, draw_h)
+
+    def _draw_returning_card_motions(self, battle: Battle, now: float) -> None:
+        heroes = {hero.unit_id: hero for hero in battle.party}
+        for motion in self.returning_card_motions.values():
+            hero = heroes.get(motion.hero_id)
+            if not hero:
+                continue
+            center_x, center_y, visual_scale, _ = self._card_motion_value(motion, now)
+            self._draw_skill_card_face(hero, motion.card, center_x, center_y, visual_scale)
 
     def _draw_order(self, battle: Battle) -> None:
         self.panel(28, 789, 1384, 75, PANEL)
@@ -230,60 +394,23 @@ class BattleScreen:
         elif battle.phase == "defeat":
             self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
         elif battle.phase == "player" and battle.selected_card:
-            self._draw_selected_target_card(battle)
-            cancel = CANCEL_TARGET_RECT
-            self.panel(cancel[0], cancel[1], cancel[2] - cancel[0], cancel[3] - cancel[1], PANEL_LIGHT, GOLD)
-            self.text((cancel[0] + cancel[2]) / 2, (cancel[1] + cancel[3]) / 2, "취소", 14, GOLD, centered=True)
             target = self._focused_enemy(battle)
             if target:
                 _, target_y = self._enemy_position(battle, target)
                 self._draw_target_arrow(930, 478, 1170, target_y)
 
-    def _draw_selected_target_card(self, battle: Battle) -> None:
+    def _draw_selected_target_card(self, battle: Battle, now: float) -> None:
         hero = battle.active
         card = battle.selected_card
+        motion = self.selected_card_motion
         if not hero or not card:
             return
-
-        center_x, center_y = 720, 480
-        self._draw_card_rect(
-            center_x,
-            center_y,
-            CARD_W,
-            CARD_H,
-            (31, 37, 50),
-            inset=CARD_BACKGROUND_INSET,
-        )
-        content_scale = CARD_LAYOUT_SCALE
-        visual_bottom = center_y - CARD_H / 2
-        self.text(
-            center_x,
-            visual_bottom + CARD_H - 22 * content_scale,
-            card.name,
-            round(14 * content_scale),
-            hero.accent,
-            centered=True,
-        )
-        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
-        description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
-        for line_index, line in enumerate(description_lines):
-            self.text(
-                center_x,
-                description_start_y - line_index * 14 * content_scale,
-                line,
-                round(11 * content_scale),
-                TEXT,
-                centered=True,
-            )
-        self.text(
-            center_x,
-            visual_bottom + 20 * content_scale,
-            f"×{card.power:.2f} · {card.short_effect()}",
-            round(10 * content_scale),
-            MINT if card.status_key else MUTED,
-            centered=True,
-        )
-        self.image(self.card_frames[hero.unit_id], center_x, center_y, CARD_W, CARD_H)
+        if motion and motion.card is card and motion.hero_id == hero.unit_id:
+            center_x, center_y, visual_scale, _ = self._card_motion_value(motion, now)
+        else:
+            center_x, center_y = CARD_TARGET_CENTER
+            visual_scale = CARD_TARGET_SCALE
+        self._draw_skill_card_face(hero, card, center_x, center_y, visual_scale)
 
     def _draw_hero(self, hero: PlayerCharacter, x: int, y: int, battle: Battle) -> None:
         active = hero is battle.active
@@ -541,14 +668,16 @@ class BattleScreen:
 
     def _draw_action_cards(self, battle: Battle, now: float) -> None:
         """Draw portrait skill cards and smoothly enlarge the card under the pointer."""
-        if battle.phase != "player" or not battle.active or battle.selected_card:
+        if battle.phase != "player" or not battle.active:
             return
         hero = battle.active
+        selecting_target = battle.selected_card is not None
         action_indices = list(range(min(len(hero.hand), 5))) + [5]
         if self.action_cursor not in action_indices:
             self.action_cursor = action_indices[0]
         hand_center_x = (CARD_POSITIONS[0][0] + REST_RECT[2]) / 2
-        self.text(hand_center_x, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
+        prompt = "공격할 적을 선택하세요" if selecting_target else "사용할 스킬을 선택하세요"
+        self.text(hand_center_x, 773, f"{hero.name} · {prompt}", 14, hero.accent, centered=True)
         hero_index = battle.party.index(hero)
         hero_x, hero_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
         focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
@@ -556,7 +685,14 @@ class BattleScreen:
         focus_x, focus_y = TURN_FOCUS_CENTER
         origin_x = round(hero_x + (focus_x - hero_x) * focus_eased)
         origin_y = round(hero_y + (focus_y - hero_y) * focus_eased)
-        card_entries = list(enumerate(zip(hero.hand[:5], CARD_POSITIONS)))
+        returning_keys = {
+            key for key, motion in self.returning_card_motions.items() if motion.hero_id == hero.unit_id
+        }
+        card_entries = [
+            (index, (card, CARD_POSITIONS[index]))
+            for index, card in enumerate(hero.hand[:5])
+            if card is not battle.selected_card and (hero.unit_id, id(card)) not in returning_keys
+        ]
         if self.hovered_card_index is not None:
             card_entries.sort(key=lambda entry: entry[0] == self.hovered_card_index)
 
@@ -629,15 +765,21 @@ class BattleScreen:
             self.image(frame, center_x, center_y, draw_w, draw_h)
 
         rest = REST_RECT
-        rest_focused = self.action_cursor == 5
         center_x = (rest[0] + rest[2]) / 2
         center_y = (rest[1] + rest[3]) / 2
-        rest_fill = (57, 50, 41) if rest_focused else PANEL_LIGHT
-        rest_border = GOLD if rest_focused else LINE
-        self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_fill)
-        self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_border, filled=False)
-        self.text(center_x, rest[1] + 113 * CARD_LAYOUT_SCALE, "휴식", round(18 * CARD_LAYOUT_SCALE), GOLD if rest_focused else TEXT, centered=True)
-        self.text(center_x, rest[1] + 77 * CARD_LAYOUT_SCALE, "카드 보충", round(12 * CARD_LAYOUT_SCALE), MUTED, centered=True)
+        if selecting_target:
+            self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, (57, 50, 41))
+            self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, GOLD, filled=False)
+            self.text(center_x, rest[1] + 113 * CARD_LAYOUT_SCALE, "취소", round(18 * CARD_LAYOUT_SCALE), GOLD, centered=True)
+            self.text(center_x, rest[1] + 77 * CARD_LAYOUT_SCALE, "카드 선택으로", round(12 * CARD_LAYOUT_SCALE), MUTED, centered=True)
+        else:
+            rest_focused = self.action_cursor == 5
+            rest_fill = (57, 50, 41) if rest_focused else PANEL_LIGHT
+            rest_border = GOLD if rest_focused else LINE
+            self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_fill)
+            self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_border, filled=False)
+            self.text(center_x, rest[1] + 113 * CARD_LAYOUT_SCALE, "휴식", round(18 * CARD_LAYOUT_SCALE), GOLD if rest_focused else TEXT, centered=True)
+            self.text(center_x, rest[1] + 77 * CARD_LAYOUT_SCALE, "카드 보충", round(12 * CARD_LAYOUT_SCALE), MUTED, centered=True)
 
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
         """Use pointer hover to focus cards or the nearest living enemy."""
@@ -651,8 +793,9 @@ class BattleScreen:
             if target:
                 self.target_enemy_id = target.unit_id
             return
-        card_positions = CARD_POSITIONS[:len(battle.active.hand[:5])]
-        for index, (card_x, card_y) in enumerate(card_positions):
+        for index, (card, (card_x, card_y)) in enumerate(zip(battle.active.hand[:5], CARD_POSITIONS)):
+            if (battle.active.unit_id, id(card)) in self.returning_card_motions:
+                continue
             if self._inside(x, y, self._card_pointer_rect(index, card_x, card_y, include_hover=False)):
                 self.action_cursor = index
                 self.hovered_card_index = index
@@ -698,6 +841,8 @@ class BattleScreen:
             return
 
         for index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
+            if (hero.unit_id, id(card)) in self.returning_card_motions:
+                continue
             card_rect = self._card_pointer_rect(
                 index, card_x, card_y, include_hover=index == self.hovered_card_index
             )
@@ -744,6 +889,7 @@ class BattleScreen:
 
     def _sync_focus(self, battle: Battle) -> None:
         if battle.active and (battle.active.unit_id != self.focus_actor_id or battle.round != self.focus_round):
+            self.returning_card_motions.clear()
             self.focus_actor_id = battle.active.unit_id
             self.focus_round = battle.round
             self.action_cursor = 0
