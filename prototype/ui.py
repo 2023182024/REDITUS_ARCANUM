@@ -194,7 +194,9 @@ class BattleScreen:
             self._draw_enemy(enemy, enemy_x, enemy_y, battle)
         self._draw_attack_effect(battle, now)
 
-        if battle.phase in ("attack_timing", "defense_timing"):
+        if battle.phase == "enemy_skill_reveal":
+            self._draw_enemy_skill_reveal(battle, now)
+        elif battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
         elif battle.phase == "result":
             self._draw_result(battle)
@@ -240,6 +242,7 @@ class BattleScreen:
     def _draw_enemy(self, enemy: Enemy, x: int, y: int, battle: Battle) -> None:
         selected_target = enemy.unit_id == self.target_enemy_id and battle.phase == "player" and battle.selected_card
         target = selected_target or (enemy is battle.attack_target and battle.phase in ("attack_timing", "result"))
+        target = target or (enemy is battle.incoming_source and battle.phase == "enemy_skill_reveal")
         radius_color = GOLD if target else enemy.accent
         if not enemy.alive:
             self.circle(x, y, 40, (72, 68, 81), filled=True)
@@ -317,6 +320,49 @@ class BattleScreen:
     def _bar(self, x: int, y: int, w: int, h: int, ratio: float, color: tuple[int, int, int]) -> None:
         self.rect(x, y, w, h, (43, 49, 62))
         self.rect(x, y, int(w * max(0, min(1, ratio))), h, color)
+
+    def _draw_enemy_skill_reveal(self, battle: Battle, now: float) -> None:
+        source = battle.incoming_source
+        target = battle.incoming_target
+        skill = battle.incoming_skill
+        if not source or not skill:
+            return
+
+        card_x, card_y, card_w, card_h = 550, 260, 340, 458
+        self.panel(card_x, card_y, card_w, card_h, (25, 27, 42), CORAL)
+        self.rect(card_x + 9, card_y + 9, card_w - 18, card_h - 18, (62, 37, 49), filled=False)
+        self.text(720, 680, "적 스킬", 15, CORAL, centered=True)
+        self.text(720, 640, skill.name, 27, GOLD, centered=True)
+
+        art_x, art_y, art_w, art_h = 580, 470, 280, 132
+        self.panel(art_x, art_y, art_w, art_h, (31, 34, 51), (105, 69, 82))
+        accent = source.accent
+        self.circle(720, 536, 48, accent, filled=False)
+        self.circle(720, 536, 34, accent, filled=True)
+        self.circle(720, 536, 20, (31, 25, 45), filled=True)
+        for spoke in range(8):
+            angle = spoke * math.pi / 4
+            inner_x = 720 + int(54 * math.cos(angle))
+            inner_y = 536 + int(54 * math.sin(angle))
+            outer_x = 720 + int(68 * math.cos(angle))
+            outer_y = 536 + int(68 * math.sin(angle))
+            self.line(inner_x, inner_y, outer_x, outer_y, accent)
+
+        self.line(584, 448, 856, 448, (105, 69, 82))
+        description_lines = textwrap.wrap(skill.description, width=24)[:3] or [skill.description]
+        for index, line in enumerate(description_lines):
+            self.text(720, 416 - index * 22, line, 15, TEXT, centered=True)
+        effect_name = skill.short_effect() if skill.status_key else "일반 공격"
+        self.text(720, 346, f"효과 · {effect_name}", 14, MINT if skill.status_key else MUTED, centered=True)
+        self.text(720, 318, f"대상 · {target.name if target else '아군'}", 14, TEXT, centered=True)
+        self.text(720, 294, f"위력 ×{skill.power:.2f}", 13, MUTED, centered=True)
+
+        progress = max(
+            0.0,
+            min(1.0, (now - battle.enemy_skill_reveal_started_at) / battle.ENEMY_SKILL_REVEAL_DURATION),
+        )
+        self.rect(card_x + 24, card_y + 10, card_w - 48, 4, (77, 50, 61))
+        self.rect(card_x + 24, card_y + 10, round((card_w - 48) * (1 - progress)), 4, CORAL)
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"

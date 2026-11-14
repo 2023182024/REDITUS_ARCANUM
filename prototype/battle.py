@@ -27,6 +27,7 @@ class AttackEffectState:
 
 
 class Battle:
+    ENEMY_SKILL_REVEAL_DURATION = 1.5
     PERFECT_MULTIPLIER = 1.6
     GOOD_MULTIPLIER = 1.0
     MISS_MULTIPLIER = 0.5
@@ -56,6 +57,7 @@ class Battle:
         self.incoming_target: PlayerCharacter | None = None
         self.incoming_source: Enemy | None = None
         self.incoming_skill: SkillCard | None = None
+        self.enemy_skill_reveal_started_at = 0.0
         self.timing_start = time.monotonic()
         self.timing_speed = 1.0
         self.timing_center = 0.5
@@ -137,7 +139,7 @@ class Battle:
                 self.order_index += 1
                 continue
             self._enemy_action(actor)
-            if self.phase == "defense_timing":
+            if self.phase in ("enemy_skill_reveal", "defense_timing"):
                 return
 
     def _end_round(self) -> None:
@@ -167,16 +169,16 @@ class Battle:
         self.incoming_source = enemy
         self.incoming_target = target
         self.incoming_skill = skill
-        self.timing_start = time.monotonic()
+        self.enemy_skill_reveal_started_at = time.monotonic()
         self.timing_speed = skill.timing_speed
         self.timing_center = 0.5
         bonus = 0.04 if target.unit_id == "A" else 0
         self.timing_bonus = bonus
         self.perfect_window = 0.055 + bonus
         self.good_window = 0.17 + bonus
-        self.phase = "defense_timing"
+        self.phase = "enemy_skill_reveal"
         self.active = None
-        self._note(f"{enemy.name} · {skill.name}! {target.name}가 방어 커맨드를 입력합니다.")
+        self._note(f"{enemy.name} · {skill.name} 공개 · {target.name} 대상")
 
     def begin_attack(self, hero: PlayerCharacter, card: SkillCard, target: Enemy) -> None:
         if self.phase != "player" or hero is not self.active:
@@ -339,7 +341,15 @@ class Battle:
 
     def update(self, now: float | None = None) -> None:
         current = time.monotonic() if now is None else now
-        if self.phase in ("attack_timing", "defense_timing") and current - self.timing_start > 4.0 / max(0.5, self.timing_speed):
+        if (
+            self.phase == "enemy_skill_reveal"
+            and current - self.enemy_skill_reveal_started_at >= self.ENEMY_SKILL_REVEAL_DURATION
+        ):
+            self.timing_start = current
+            self.phase = "defense_timing"
+            target_name = self.incoming_target.name if self.incoming_target else "아군"
+            self._note(f"{target_name} 방어 판정 시작")
+        elif self.phase in ("attack_timing", "defense_timing") and current - self.timing_start > 4.0 / max(0.5, self.timing_speed):
             self._resolve_timing("MISS")
         elif self.phase == "result" and current >= self.result_until:
             self.active = None
