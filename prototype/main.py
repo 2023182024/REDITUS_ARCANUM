@@ -142,8 +142,11 @@ def main() -> None:
                                     floor_map.complete_node(node_id)
                                     map_notice = "상점 콘텐츠는 미구현이라 구매 없이 다음 경로로 이동합니다."
                                     map_notice_until = time.monotonic() + 3.0
-                                elif node_id and node_id in ("battle_1", "battle_2", "boss"):
-                                    encounter = "floor1_boss" if node_id == "boss" else "corridor"
+                                elif node_id and node_id in ("battle_1", "battle_2", "elite", "boss"):
+                                    encounter = {
+                                        "elite": "floor1_elite",
+                                        "boss": "floor1_boss",
+                                    }.get(node_id, "corridor")
                                     battle = Battle([selected_character_id], encounter, decks=campaign_decks)
                                     active_node_id = node_id
                                     return_to_map_at = None

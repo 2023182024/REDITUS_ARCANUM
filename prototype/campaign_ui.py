@@ -129,7 +129,12 @@ class CampaignScreen(BattleScreen):
             accent = (112, 174, 152)
         else:
             w, h = 230, 108
-            accent = {"battle": (203, 126, 110), "shop": (134, 159, 201), "boss": GOLD}[node.kind]
+            accent = {
+                "battle": (203, 126, 110),
+                "elite": (232, 170, 83),
+                "shop": (134, 159, 201),
+                "boss": GOLD,
+            }[node.kind]
         rect = (node.x - w // 2, node.y - h // 2, node.x + w // 2, node.y + h // 2)
         self.map_node_rects[node.node_id] = rect
         state = node.state
@@ -142,7 +147,7 @@ class CampaignScreen(BattleScreen):
         elif node.kind == "shop":
             status = "상점 · 구매 기능 미구현" if state != "locked" else "잠김"
         else:
-            kind_label = {"battle": "전투", "boss": "층 보스"}[node.kind]
+            kind_label = {"battle": "전투", "elite": "정예", "boss": "층 보스"}[node.kind]
             status_label = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
             status = f"{kind_label}  ·  {status_label}"
         self.text(node.x, node.y - 15, status, 13, GOLD if state == "available" else MUTED, centered=True)

@@ -30,18 +30,20 @@ class FloorOne:
     edges = (
         ("entrance", "battle_1"),
         ("battle_1", "battle_2"),
-        ("battle_1", "shop"),
-        ("battle_2", "boss"),
+        ("battle_1", "elite"),
+        ("battle_2", "shop"),
+        ("elite", "shop"),
         ("shop", "boss"),
     )
 
     def __init__(self) -> None:
         self.nodes = {
             "entrance": MapNode("entrance", "출발 지점", "start", 865, 145, ("battle_1",), unlocked=True, cleared=True),
-            "battle_1": MapNode("battle_1", "잿빛 회랑", "battle", 865, 330, ("battle_2", "shop"), unlocked=True),
-            "battle_2": MapNode("battle_2", "유리 숲길", "battle", 625, 535, ("boss",)),
-            "shop": MapNode("shop", "떠돌이 상점", "shop", 1105, 535, ("boss",)),
-            "boss": MapNode("boss", "1층 수호자", "boss", 865, 755),
+            "battle_1": MapNode("battle_1", "잿빛 회랑", "battle", 865, 310, ("battle_2", "elite"), unlocked=True),
+            "battle_2": MapNode("battle_2", "유리 숲길", "battle", 625, 475, ("shop",)),
+            "elite": MapNode("elite", "유리 파수꾼", "elite", 1105, 475, ("shop",)),
+            "shop": MapNode("shop", "떠돌이 상점", "shop", 865, 640, ("boss",)),
+            "boss": MapNode("boss", "1층 수호자", "boss", 865, 785),
         }
         self.is_complete = False
 
@@ -50,10 +52,9 @@ class FloorOne:
         if not node.unlocked or node.cleared:
             return False
         node.cleared = True
-        if node_id == "battle_2":
-            self.nodes["shop"].unlocked = False
-        elif node_id == "shop":
-            self.nodes["battle_2"].unlocked = False
+        if node_id in ("battle_2", "elite"):
+            other_branch = "elite" if node_id == "battle_2" else "battle_2"
+            self.nodes[other_branch].unlocked = False
         for next_id in node.next_nodes:
             self.nodes[next_id].unlocked = True
         if node_id == "boss":

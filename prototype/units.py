@@ -116,6 +116,20 @@ def create_party(
 
 
 def create_enemies(encounter_id: str = "corridor") -> list[Enemy]:
+    if encounter_id == "floor1_elite":
+        return [
+            Enemy(
+                unit_id="glass_warden",
+                name="유리 숲의 정예 파수꾼",
+                side="enemy",
+                hp=185,
+                max_hp=185,
+                attack=20,
+                speed=106,
+                accent=(232, 170, 83),
+                skills=enemy_skills("ash_hound"),
+            )
+        ]
     if encounter_id == "floor1_boss":
         return [
             Enemy(
