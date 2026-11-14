@@ -85,6 +85,6 @@ def enemy_skills(enemy_id: str) -> list[SkillCard]:
             SkillCard("균열탄", "느리고 무거운 공격", 1.15, 0.88),
         ]
     return [
-        SkillCard("압박 포효", "실패 시 휴식 불가", 1.0, 1.6, status_key="rest_lock", status_amount=0, status_turns=1),
+        SkillCard("압박 포효", "PERFECT 적중 시 휴식 불가", 1.0, 1.6, status_key="rest_lock", status_amount=0, status_turns=2),
         SkillCard("그림자 습격", "빠른 공격", 0.9, 2.0),
     ]
