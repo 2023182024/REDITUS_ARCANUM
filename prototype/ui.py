@@ -361,8 +361,7 @@ class BattleScreen:
             self.text(720, 503, "SPACE · 다시 전투", 16, GOLD, centered=True)
 
     def _draw_target_arrow(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Draw the target-selection arrow from the center to the enemy side."""
-        self.line(x1, y1, x2, y2, GOLD)
+        """Draw only the arrowhead that marks the selected target."""
         self.line(x2, y2, x2 - 28, y2 + 18, GOLD)
         self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
 
