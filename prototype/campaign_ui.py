@@ -230,7 +230,7 @@ class CampaignScreen(BattleScreen):
             effect_color = MINT if card.status_key else MUTED
             self.text(center_x, card_y + 20 * content_scale, f"×{card.power * PLAYER_CARD_DAMAGE_SCALE:.2f} · {card.short_effect()}", round(10 * content_scale), effect_color, centered=True)
             self.image(self.card_frames[character_id], center_x, center_y, card_width, card_height)
-        self.text(720, 205, "← / → 선택  ·  Space 결정  ·  마우스 클릭", 14, MUTED, centered=True)
+        self.text(720, 205, "카드에 커서를 올려 강조 표시 · 클릭하여 선택", 14, MUTED, centered=True)
         p2d.update_canvas()
 
     def reward_choice_at(self, x: int, y: int) -> int | None:

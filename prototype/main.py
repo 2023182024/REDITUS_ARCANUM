@@ -37,7 +37,7 @@ def main() -> None:
         campaign_decks: dict[str, list[SkillCard]] = {}
         reward_options: list[tuple[str, SkillCard]] = []
         reward_character_id: str | None = None
-        reward_cursor = 0
+        reward_cursor = -1
         running = True
 
         def claim_reward(index: int) -> None:
@@ -69,7 +69,7 @@ def main() -> None:
             return_to_map_at = None
             reward_options = []
             reward_character_id = None
-            reward_cursor = 0
+            reward_cursor = -1
 
         while running:
             frame_start = time.monotonic()
@@ -95,17 +95,14 @@ def main() -> None:
                         mode = "map"
                     elif mode == "battle" and battle:
                         screen.handle_key(battle, event.key)
-                    elif mode == "reward" and reward_options:
-                        if event.key in (p2d.SDLK_LEFT, p2d.SDLK_UP):
-                            reward_cursor = (reward_cursor - 1) % len(reward_options)
-                        elif event.key in (p2d.SDLK_RIGHT, p2d.SDLK_DOWN):
-                            reward_cursor = (reward_cursor + 1) % len(reward_options)
-                        elif event.key in (p2d.SDLK_SPACE, p2d.SDLK_RETURN):
-                            claim_reward(reward_cursor)
-                elif event.type == p2d.SDL_MOUSEMOTION and mode == "battle" and battle:
+                elif event.type == p2d.SDL_MOUSEMOTION:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
-                    screen.handle_mouse_move(battle, x, y)
+                    if mode == "battle" and battle:
+                        screen.handle_mouse_move(battle, x, y)
+                    elif mode == "reward":
+                        hover_index = screen.reward_choice_at(x, y)
+                        reward_cursor = hover_index if hover_index is not None else -1
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -187,7 +184,7 @@ def main() -> None:
                             if not enemy.alive
                             for skill in enemy.skills
                         ]
-                        reward_cursor = 0
+                        reward_cursor = -1
                         mode = "reward"
                         return_to_map_at = None
             elif mode == "reward" and reward_character_id:
