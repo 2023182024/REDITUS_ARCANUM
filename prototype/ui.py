@@ -802,8 +802,8 @@ class BattleScreen:
                 return
 
         previous_hover = self.hovered_card_index
-        if previous_hover is not None and previous_hover < len(card_positions):
-            card_x, card_y = card_positions[previous_hover]
+        if previous_hover is not None and previous_hover < len(CARD_POSITIONS):
+            card_x, card_y = CARD_POSITIONS[previous_hover]
             if self._inside(x, y, self._card_pointer_rect(previous_hover, card_x, card_y, include_hover=True)):
                 self.action_cursor = previous_hover
                 return
