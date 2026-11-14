@@ -37,6 +37,7 @@ TURN_FOCUS_ANIMATION_DURATION = 0.38
 CANCEL_TARGET_RECT = REST_RECT
 CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
+CARD_HAND_COLLAPSE_DURATION = 0.30
 CARD_HOVER_DURATION = 0.16
 CARD_HOVER_SCALE = 0.10
 CARD_HOVER_LIFT = 17
@@ -110,6 +111,8 @@ class BattleScreen:
         self.focus_actor_id: str | None = None
         self.focus_round: int | None = None
         self.card_animation_started_at = 0.0
+        self.card_hand_collapse_progress = 0.0
+        self.card_hand_collapse_last_at = time.monotonic()
         self.hovered_card_index: int | None = None
         self.card_hover_progress: dict[int, float] = {}
         self.card_hover_last_at = time.monotonic()
@@ -688,6 +691,18 @@ class BattleScreen:
         returning_keys = {
             key for key, motion in self.returning_card_motions.items() if motion.hero_id == hero.unit_id
         }
+        collapse_delta = max(0.0, min(0.05, now - self.card_hand_collapse_last_at))
+        self.card_hand_collapse_last_at = now
+        if selecting_target:
+            self.card_hand_collapse_progress = min(
+                1.0, self.card_hand_collapse_progress + collapse_delta / CARD_HAND_COLLAPSE_DURATION
+            )
+        else:
+            self.card_hand_collapse_progress = max(
+                0.0, self.card_hand_collapse_progress - collapse_delta / CARD_HAND_COLLAPSE_DURATION
+            )
+        collapse_progress = self.card_hand_collapse_progress
+        collapse_eased = collapse_progress * collapse_progress * (3.0 - 2.0 * collapse_progress)
         card_entries = [
             (index, (card, CARD_POSITIONS[index]))
             for index, card in enumerate(hero.hand[:5])
@@ -717,6 +732,11 @@ class BattleScreen:
             hover_eased = hover_progress * hover_progress * (3.0 - 2.0 * hover_progress)
             visual_scale = spawn_scale * (1.0 + CARD_HOVER_SCALE * hover_eased)
             center_y += CARD_HOVER_LIFT * hover_eased
+            center_x += (origin_x - center_x) * collapse_eased
+            center_y += (origin_y - center_y) * collapse_eased
+            visual_scale *= 1.0 - collapse_eased
+            if visual_scale <= 0.025:
+                continue
 
             draw_w = max(2, round(CARD_W * visual_scale))
             draw_h = max(2, round(CARD_H * visual_scale))
@@ -730,7 +750,7 @@ class BattleScreen:
                 center_x, center_y, draw_w, draw_h, (31, 37, 50), inset=CARD_BACKGROUND_INSET
             )
 
-            if progress >= 0.82:
+            if progress >= 0.82 and visual_scale >= 0.65:
                 title_color = GOLD if focused else hero.accent
                 visual_bottom = center_y - draw_h / 2
                 self.text(
@@ -895,6 +915,8 @@ class BattleScreen:
             self.action_cursor = 0
             self.target_enemy_id = None
             self.card_animation_started_at = time.monotonic()
+            self.card_hand_collapse_progress = 0.0
+            self.card_hand_collapse_last_at = self.card_animation_started_at
             self.hovered_card_index = None
             self.card_hover_progress.clear()
             self.card_hover_last_at = self.card_animation_started_at
