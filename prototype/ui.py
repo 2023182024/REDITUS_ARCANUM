@@ -224,7 +224,7 @@ class BattleScreen:
         elif battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
         elif battle.phase == "result":
-            self._draw_result(battle)
+            self._draw_result(battle, now)
         elif battle.phase == "victory":
             self._draw_end_card("전투 승리", "1층 맵으로 돌아갑니다.", True)
         elif battle.phase == "defeat":
@@ -385,10 +385,6 @@ class BattleScreen:
             self.image(flash, x, y, round(124 * flash_scale), round(124 * flash_scale))
             flash.opacify(1.0)
 
-        number_y = y + 76 + min(22, elapsed * 42)
-        number_color = (255, 226, 149) if effect.quality == "PERFECT" else (242, 238, 232)
-        self.text(x, number_y, f"-{effect.damage}", 22, number_color, centered=True)
-
     @staticmethod
     def _unit_position(battle: Battle, unit) -> tuple[int, int]:
         if unit.side == "player":
@@ -493,10 +489,42 @@ class BattleScreen:
         self.line(marker_x, y - 6, marker_x, y + h + 6, (248, 246, 229))
         self.text(720, 534, "PERFECT" if abs(marker_x - center_x) <= perfect_px else "", 12, MINT, centered=True)
 
-    def _draw_result(self, battle: Battle) -> None:
-        self.panel(500, 480, 440, 120, (26, 33, 48), battle.result_color)
-        self.text(720, 545, battle.result_text, 25, battle.result_color, centered=True)
-        self.text(720, 510, "다음 행동으로 넘어갑니다", 14, MUTED, centered=True)
+    def _draw_result(self, battle: Battle, now: float) -> None:
+        elapsed = max(0.0, now - battle.result_started_at)
+        pop = min(1.0, elapsed / 0.16)
+        scale = 0.78 + 0.22 * (1.0 - (1.0 - pop) ** 3)
+        opacity = max(0.0, 1.0 - max(0.0, (elapsed - 0.58) / 0.32))
+
+        result_image = self._text_image(battle.result_quality, battle.result_color, 64)
+        result_image.opacify(opacity)
+        result_image.draw(
+            round(720 * SCALE_X),
+            round(480 * SCALE_Y),
+            round(result_image.w * scale),
+            round(result_image.h * scale),
+        )
+        result_image.opacify(1.0)
+
+        units = (*battle.party, *battle.enemies)
+        target = next(
+            (unit for unit in units if unit.unit_id == battle.result_target_id),
+            None,
+        )
+        if target:
+            x, y = self._unit_position(battle, target)
+            number_image = self._text_image(
+                "0" if battle.result_damage == 0 else f"-{battle.result_damage}",
+                battle.result_color,
+                30,
+            )
+            number_image.opacify(opacity)
+            number_image.draw(
+                round(x * SCALE_X),
+                round((y + 76 + min(38, elapsed * 45)) * SCALE_Y),
+                number_image.w,
+                number_image.h,
+            )
+            number_image.opacify(1.0)
 
     def _draw_end_card(self, title: str, message: str, victory: bool) -> None:
         border = GOLD if victory else CORAL

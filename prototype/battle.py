@@ -22,7 +22,6 @@ class AttackEffectState:
     target_id: str
     source_side: str
     quality: str
-    damage: int
     started_at: float
 
 
@@ -64,8 +63,11 @@ class Battle:
         self.perfect_window = 0.055
         self.good_window = 0.17
         self.timing_bonus = 0.0
-        self.result_text = ""
+        self.result_quality = "GOOD"
         self.result_color = (240, 236, 218)
+        self.result_target_id: str | None = None
+        self.result_damage = 0
+        self.result_started_at = 0.0
         self.attack_effect: AttackEffectState | None = None
         self.result_until = 0.0
         self.log_lines: list[str] = []
@@ -274,7 +276,7 @@ class Battle:
         stack_scale = 1 + hero.perfect_stacks * 0.12 if hero.unit_id == "D" else 1.0
         damage = hero.attack * card.power * multiplier * weak_scale * stack_scale
         dealt = target.receive_hit(damage)
-        self._record_attack_effect(hero, target, quality, dealt)
+        self._record_attack_effect(hero, target, quality)
         hero.make_discard(card)
         if hero.unit_id == "D":
             if quality == "PERFECT":
@@ -283,7 +285,7 @@ class Battle:
                 hero.perfect_stacks = 0
         if quality in ("GOOD", "PERFECT") and card.status_key and target.alive:
             target.statuses.apply(card.status_key, card.status_turns, card.status_amount)
-        self._show_result(f"{quality}  ·  {dealt} 피해", quality)
+        self._show_result(quality, target, dealt)
         self._note(f"{hero.name} · {card.name} · {quality} · {dealt} 피해 → {target.name}")
         if not target.alive:
             self._note(f"{target.name} 처치")
@@ -299,40 +301,39 @@ class Battle:
         weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
         if quality == "MISS":
             damage = target.receive_hit(source.attack * skill.power * weak_scale)
-            text = f"MISS  ·  {damage} 피해"
             self._note(f"방어 실패 · {target.name}이 {damage} 피해를 받았습니다.")
         elif quality == "PERFECT" and target.unit_id == "B":
             damage = 0
-            text = "PERFECT DODGE  ·  회피"
             self._note("B · PERFECT 회피로 피해를 받지 않았습니다.")
         else:
             damage = target.receive_hit(source.attack * skill.power * weak_scale * 0.5)
-            text = f"{quality} GUARD  ·  {damage} 피해"
             self._note(f"방어 성공 · {target.name}이 피해를 절반으로 줄였습니다.")
         if damage:
-            self._record_attack_effect(source, target, quality, damage)
+            self._record_attack_effect(source, target, quality)
         if damage and quality == "MISS" and skill.status_key and target.alive:
             target.statuses.apply(skill.status_key, 1, skill.status_amount)
             self._note(f"{target.name} · {skill.short_effect()} 상태가 적용되었습니다.")
-        self._show_result(text, quality)
+        self._show_result(quality, target, damage)
         self.phase = "result"
         self.result_after = "actor"
         self.result_until = time.monotonic() + 0.9
 
     def _record_attack_effect(
-        self, source: Combatant, target: Combatant, quality: str, damage: int
+        self, source: Combatant, target: Combatant, quality: str
     ) -> None:
         self.attack_effect = AttackEffectState(
             source_id=source.unit_id,
             target_id=target.unit_id,
             source_side=source.side,
             quality=quality,
-            damage=damage,
             started_at=time.monotonic(),
         )
 
-    def _show_result(self, text: str, quality: str) -> None:
-        self.result_text = text
+    def _show_result(self, quality: str, target: Combatant, damage: int) -> None:
+        self.result_quality = quality
+        self.result_target_id = target.unit_id
+        self.result_damage = damage
+        self.result_started_at = time.monotonic()
         self.result_color = {
             "PERFECT": (238, 204, 117),
             "GOOD": (133, 218, 181),
