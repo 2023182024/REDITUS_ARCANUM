@@ -21,10 +21,17 @@ SCALE_Y = HEIGHT / DESIGN_HEIGHT
 CARD_LAYOUT_SCALE = 1.266
 CARD_W = round(140 * CARD_LAYOUT_SCALE)
 CARD_H = round(188 * CARD_LAYOUT_SCALE)
-CARD_POSITIONS = ((410, 516), (625, 516), (410, 263), (625, 263), (410, 10))
-REST_RECT = (625, 10, 625 + CARD_W, 10 + CARD_H)
+HAND_OFFSET_X = 240
+CARD_POSITIONS = tuple(
+    (x + HAND_OFFSET_X, y)
+    for x, y in ((410, 516), (625, 516), (410, 263), (625, 263), (410, 10))
+)
+REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
 PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
+TURN_FOCUS_CENTER = (round(DESIGN_WIDTH * 2 / 5), DESIGN_HEIGHT // 2)
+TURN_FOCUS_SCALE = 1.35
+TURN_FOCUS_ANIMATION_DURATION = 0.38
 CANCEL_TARGET_RECT = (810, 268, 916, 310)
 CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
@@ -85,6 +92,8 @@ class BattleScreen:
         self.hovered_card_index: int | None = None
         self.card_hover_progress: dict[int, float] = {}
         self.card_hover_last_at = time.monotonic()
+        self.turn_focus_progress: dict[str, float] = {}
+        self.turn_focus_last_at = time.monotonic()
 
     @staticmethod
     def _find_font() -> str:
@@ -145,6 +154,7 @@ class BattleScreen:
 
     def draw(self, battle: Battle, now: float) -> None:
         self._sync_focus(battle)
+        self._advance_turn_focus(battle, now)
         p2d.clear_canvas()
         self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self._draw_header(battle)
@@ -161,6 +171,18 @@ class BattleScreen:
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
         self.text(x + 27, y, title, 14, TEXT, centered=True)
+
+    def _advance_turn_focus(self, battle: Battle, now: float) -> None:
+        elapsed = max(0.0, min(0.05, now - self.turn_focus_last_at))
+        self.turn_focus_last_at = now
+        progress_delta = elapsed / TURN_FOCUS_ANIMATION_DURATION
+        for hero in battle.party:
+            progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
+            if hero is battle.active:
+                progress = min(1.0, progress + progress_delta)
+            else:
+                progress = max(0.0, progress - progress_delta)
+            self.turn_focus_progress[hero.unit_id] = progress
 
     def _draw_order(self, battle: Battle) -> None:
         self.panel(28, 789, 1384, 75, PANEL)
@@ -222,13 +244,26 @@ class BattleScreen:
         active = hero is battle.active
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
-        self.circle(x, y, 60, glow, filled=True)
+        focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
+        focus_eased = focus_progress * focus_progress * (3.0 - 2.0 * focus_progress)
+        focus_x, focus_y = TURN_FOCUS_CENTER
+        display_x = round(x + (focus_x - x) * focus_eased)
+        display_y = round(y + (focus_y - y) * focus_eased)
+        visual_scale = 1.0 + (TURN_FOCUS_SCALE - 1.0) * focus_eased
+        radius = round(60 * visual_scale)
+        self.circle(display_x, display_y, radius, glow, filled=True)
         if hero.alive:
-            self.circle(x, y, 60, border, filled=False)
-            self.image(self.portraits[hero.unit_id], x, y, 110, 165)
+            self.circle(display_x, display_y, radius, border, filled=False)
+            self.image(
+                self.portraits[hero.unit_id],
+                display_x,
+                display_y,
+                round(110 * visual_scale),
+                round(165 * visual_scale),
+            )
         else:
-            self.circle(x, y, 40, (70, 75, 86), filled=True)
-            self.text(x, y, "DOWN", 14, MUTED, centered=True)
+            self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
+            self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         info_x = 225
         self.text(info_x, y + 34, hero.name, 15, border)
         self._bar(info_x, y + 14, 178, 7, hero.hp / hero.max_hp, hero.accent)
@@ -444,9 +479,15 @@ class BattleScreen:
         action_indices = list(range(min(len(hero.hand), 5))) + [5]
         if self.action_cursor not in action_indices:
             self.action_cursor = action_indices[0]
-        self.text(720, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
+        hand_center_x = (CARD_POSITIONS[0][0] + CARD_W / 2 + REST_RECT[0] + CARD_W) / 2
+        self.text(hand_center_x, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
         hero_index = battle.party.index(hero)
-        origin_x, origin_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
+        hero_x, hero_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
+        focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
+        focus_eased = focus_progress * focus_progress * (3.0 - 2.0 * focus_progress)
+        focus_x, focus_y = TURN_FOCUS_CENTER
+        origin_x = round(hero_x + (focus_x - hero_x) * focus_eased)
+        origin_y = round(hero_y + (focus_y - hero_y) * focus_eased)
         card_entries = list(enumerate(zip(hero.hand[:5], CARD_POSITIONS)))
         if self.hovered_card_index is not None:
             card_entries.sort(key=lambda entry: entry[0] == self.hovered_card_index)
