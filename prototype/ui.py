@@ -183,13 +183,9 @@ class BattleScreen:
                 self.text(x + 82, 825, "DOWN", 12, MUTED, centered=True)
 
     def _draw_battlefield(self, battle: Battle, now: float) -> None:
-        self.rect(28, 160, 1384, 618, (54, 66, 86), filled=False)
+        self.rect(28, 0, 1384, 778, (54, 66, 86), filled=False)
         self.text(48, 753, "전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
-        self.panel(48, 205, 1344, 44, (24, 31, 46), (45, 55, 72))
-        if battle.log_lines:
-            self.text(64, 227, "전투 기록", 13, GOLD)
-            self.text(154, 227, battle.log_lines[0][:80], 14, TEXT)
 
         for hero, (hero_x, hero_y) in zip(battle.party, PARTY_POSITIONS):
             self._draw_hero(hero, hero_x, hero_y, battle)
