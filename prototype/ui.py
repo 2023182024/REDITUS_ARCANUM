@@ -195,7 +195,7 @@ class BattleScreen:
         self._draw_attack_effect(battle, now)
 
         if battle.phase == "enemy_skill_reveal":
-            self._draw_enemy_skill_reveal(battle, now)
+            self._draw_enemy_skill_reveal(battle)
         elif battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
         elif battle.phase == "result":
@@ -321,48 +321,57 @@ class BattleScreen:
         self.rect(x, y, w, h, (43, 49, 62))
         self.rect(x, y, int(w * max(0, min(1, ratio))), h, color)
 
-    def _draw_enemy_skill_reveal(self, battle: Battle, now: float) -> None:
+    def _draw_enemy_skill_reveal(self, battle: Battle) -> None:
         source = battle.incoming_source
-        target = battle.incoming_target
         skill = battle.incoming_skill
         if not source or not skill:
             return
 
-        card_x, card_y, card_w, card_h = 550, 260, 340, 458
-        self.panel(card_x, card_y, card_w, card_h, (25, 27, 42), CORAL)
-        self.rect(card_x + 9, card_y + 9, card_w - 18, card_h - 18, (62, 37, 49), filled=False)
-        self.text(720, 680, "적 스킬", 15, CORAL, centered=True)
-        self.text(720, 640, skill.name, 27, GOLD, centered=True)
-
-        art_x, art_y, art_w, art_h = 580, 470, 280, 132
-        self.panel(art_x, art_y, art_w, art_h, (31, 34, 51), (105, 69, 82))
-        accent = source.accent
-        self.circle(720, 536, 48, accent, filled=False)
-        self.circle(720, 536, 34, accent, filled=True)
-        self.circle(720, 536, 20, (31, 25, 45), filled=True)
-        for spoke in range(8):
-            angle = spoke * math.pi / 4
-            inner_x = 720 + int(54 * math.cos(angle))
-            inner_y = 536 + int(54 * math.sin(angle))
-            outer_x = 720 + int(68 * math.cos(angle))
-            outer_y = 536 + int(68 * math.sin(angle))
-            self.line(inner_x, inner_y, outer_x, outer_y, accent)
-
-        self.line(584, 448, 856, 448, (105, 69, 82))
-        description_lines = textwrap.wrap(skill.description, width=24)[:3] or [skill.description]
-        for index, line in enumerate(description_lines):
-            self.text(720, 416 - index * 22, line, 15, TEXT, centered=True)
-        effect_name = skill.short_effect() if skill.status_key else "일반 공격"
-        self.text(720, 346, f"효과 · {effect_name}", 14, MINT if skill.status_key else MUTED, centered=True)
-        self.text(720, 318, f"대상 · {target.name if target else '아군'}", 14, TEXT, centered=True)
-        self.text(720, 294, f"위력 ×{skill.power:.2f}", 13, MUTED, centered=True)
-
-        progress = max(
-            0.0,
-            min(1.0, (now - battle.enemy_skill_reveal_started_at) / battle.ENEMY_SKILL_REVEAL_DURATION),
+        center_x, center_y = 720, 470
+        card_x = center_x - CARD_W / 2
+        card_y = center_y - CARD_H / 2
+        self.text(center_x, card_y + CARD_H + 34, f"{source.name} · 적 스킬", 14, CORAL, centered=True)
+        self._draw_card_rect(
+            center_x, center_y, CARD_W, CARD_H, (31, 37, 50), inset=CARD_BACKGROUND_INSET
         )
-        self.rect(card_x + 24, card_y + 10, card_w - 48, 4, (77, 50, 61))
-        self.rect(card_x + 24, card_y + 10, round((card_w - 48) * (1 - progress)), 4, CORAL)
+
+        content_scale = CARD_LAYOUT_SCALE
+        visual_bottom = center_y - CARD_H / 2
+        self.text(
+            center_x,
+            visual_bottom + CARD_H - 22 * content_scale,
+            skill.name,
+            round(14 * content_scale),
+            source.accent,
+            centered=True,
+        )
+        description_lines = textwrap.wrap(skill.description, width=9)[:2] or [skill.description]
+        description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
+        for line_index, line in enumerate(description_lines):
+            self.text(
+                center_x,
+                description_start_y - line_index * 14 * content_scale,
+                line,
+                round(11 * content_scale),
+                TEXT,
+                centered=True,
+            )
+        effect = skill.short_effect()
+        self.text(
+            center_x,
+            visual_bottom + 20 * content_scale,
+            f"×{skill.power:.2f} · {effect}",
+            round(10 * content_scale),
+            MINT if skill.status_key else MUTED,
+            centered=True,
+        )
+
+        frame_key = {
+            "glass_wraith": "C",
+            "ash_hound": "D",
+            "floor1_guardian": "A",
+        }.get(source.unit_id, "D")
+        self.image(self.card_frames[frame_key], center_x, center_y, CARD_W, CARD_H)
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"
