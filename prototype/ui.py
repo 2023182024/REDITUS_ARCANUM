@@ -21,7 +21,7 @@ SCALE_Y = HEIGHT / DESIGN_HEIGHT
 CARD_LAYOUT_SCALE = 1.266
 CARD_W = round(140 * CARD_LAYOUT_SCALE)
 CARD_H = round(188 * CARD_LAYOUT_SCALE)
-HAND_OFFSET_X = 240
+HAND_OFFSET_X = 115
 CARD_POSITIONS = tuple(
     (x + HAND_OFFSET_X, y)
     for x, y in ((410, 516), (625, 516), (410, 263), (625, 263), (410, 10))
@@ -30,7 +30,7 @@ REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
 PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
-TURN_FOCUS_SCALE = 1.35
+TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
 CANCEL_TARGET_RECT = (810, 268, 916, 310)
 CARD_ANIMATION_DURATION = 0.38
@@ -479,7 +479,7 @@ class BattleScreen:
         action_indices = list(range(min(len(hero.hand), 5))) + [5]
         if self.action_cursor not in action_indices:
             self.action_cursor = action_indices[0]
-        hand_center_x = (CARD_POSITIONS[0][0] + CARD_W / 2 + REST_RECT[0] + CARD_W) / 2
+        hand_center_x = (CARD_POSITIONS[0][0] + REST_RECT[2]) / 2
         self.text(hand_center_x, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
         hero_index = battle.party.index(hero)
         hero_x, hero_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
