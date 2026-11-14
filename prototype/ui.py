@@ -30,6 +30,8 @@ CARD_ANIMATION_STAGGER = 0.06
 CARD_HOVER_DURATION = 0.16
 CARD_HOVER_SCALE = 0.10
 CARD_HOVER_LIFT = 13
+CARD_BACKGROUND_INSET = 8
+CARD_FOCUS_PADDING = 3
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -406,7 +408,13 @@ class BattleScreen:
             draw_x = round(center_x - draw_w / 2)
             draw_y = round(center_y - draw_h / 2)
             focused = card_index == self.action_cursor
-            self.rect(draw_x, draw_y, draw_w, draw_h, (31, 37, 50))
+            if focused:
+                self._draw_card_rect(
+                    center_x, center_y, draw_w, draw_h, GOLD, inset=-CARD_FOCUS_PADDING, filled=False
+                )
+            self._draw_card_rect(
+                center_x, center_y, draw_w, draw_h, (31, 37, 50), inset=CARD_BACKGROUND_INSET
+            )
 
             if progress >= 0.82:
                 title_color = GOLD if focused else hero.accent
@@ -470,7 +478,7 @@ class BattleScreen:
             return
         card_positions = CARD_POSITIONS[:len(battle.active.hand[:5])]
         for index, (card_x, card_y) in enumerate(card_positions):
-            if self._inside(x, y, (card_x, card_y, card_x + CARD_W, card_y + CARD_H)):
+            if self._inside(x, y, self._card_pointer_rect(index, card_x, card_y, include_hover=False)):
                 self.action_cursor = index
                 self.hovered_card_index = index
                 return
@@ -478,7 +486,7 @@ class BattleScreen:
         previous_hover = self.hovered_card_index
         if previous_hover is not None and previous_hover < len(card_positions):
             card_x, card_y = card_positions[previous_hover]
-            if self._inside(x, y, self._card_hover_rect(previous_hover, card_x, card_y)):
+            if self._inside(x, y, self._card_pointer_rect(previous_hover, card_x, card_y, include_hover=True)):
                 self.action_cursor = previous_hover
                 return
 
@@ -515,10 +523,8 @@ class BattleScreen:
             return
 
         for index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
-            card_rect = (
-                self._card_hover_rect(index, card_x, card_y)
-                if index == self.hovered_card_index
-                else (card_x, card_y, card_x + CARD_W, card_y + CARD_H)
+            card_rect = self._card_pointer_rect(
+                index, card_x, card_y, include_hover=index == self.hovered_card_index
             )
             if self._inside(x, y, card_rect):
                 self.action_cursor = index
@@ -649,19 +655,49 @@ class BattleScreen:
             if candidates:
                 self.action_cursor = min(candidates, key=lambda i: (abs(coordinates[i][1] - row), abs(coordinates[i][0] - col)))
 
-    def _card_hover_rect(self, index: int, x: int, y: int) -> tuple[float, float, float, float]:
+    def _card_pointer_rect(
+        self, index: int, x: int, y: int, *, include_hover: bool
+    ) -> tuple[float, float, float, float]:
         progress = max(0.0, min(1.0, self.card_hover_progress.get(index, 0.0)))
         eased = progress * progress * (3.0 - 2.0 * progress)
-        scale = 1.0 + CARD_HOVER_SCALE * eased
+        scale = 1.0 + CARD_HOVER_SCALE * eased if include_hover else 1.0
+        render_scale = min(SCALE_X, SCALE_Y)
         center_x = x + CARD_W / 2
-        center_y = y + CARD_H / 2 + CARD_HOVER_LIFT * eased
-        width = CARD_W * scale
-        height = CARD_H * scale
+        center_y = y + CARD_H / 2 + (CARD_HOVER_LIFT * eased if include_hover else 0.0)
+        width = CARD_W * scale * render_scale / SCALE_X
+        height = CARD_H * scale * render_scale / SCALE_Y
         return (
             center_x - width / 2,
             center_y - height / 2,
             center_x + width / 2,
             center_y + height / 2,
+        )
+
+    def _draw_card_rect(
+        self,
+        center_x: float,
+        center_y: float,
+        width: int,
+        height: int,
+        color: tuple[int, int, int],
+        *,
+        inset: int = 0,
+        filled: bool = True,
+    ) -> None:
+        render_width = width - inset * 2
+        render_height = height - inset * 2
+        if render_width <= 0 or render_height <= 0:
+            return
+        render_scale = min(SCALE_X, SCALE_Y)
+        logical_width = render_width * render_scale / SCALE_X
+        logical_height = render_height * render_scale / SCALE_Y
+        self.rect(
+            round(center_x - logical_width / 2),
+            round(center_y - logical_height / 2),
+            round(logical_width),
+            round(logical_height),
+            color,
+            filled=filled,
         )
 
     @staticmethod
