@@ -195,7 +195,7 @@ class BattleScreen:
         self._draw_attack_effect(battle, now)
 
         if battle.phase == "enemy_skill_reveal":
-            self._draw_enemy_skill_reveal(battle)
+            self._draw_enemy_skill_reveal(battle, now)
         elif battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
         elif battle.phase == "result":
@@ -321,57 +321,73 @@ class BattleScreen:
         self.rect(x, y, w, h, (43, 49, 62))
         self.rect(x, y, int(w * max(0, min(1, ratio))), h, color)
 
-    def _draw_enemy_skill_reveal(self, battle: Battle) -> None:
+    def _draw_enemy_skill_reveal(self, battle: Battle, now: float) -> None:
         source = battle.incoming_source
         skill = battle.incoming_skill
         if not source or not skill:
             return
 
-        center_x, center_y = 720, 470
-        card_x = center_x - CARD_W / 2
-        card_y = center_y - CARD_H / 2
-        self.text(center_x, card_y + CARD_H + 34, f"{source.name} · 적 스킬", 14, CORAL, centered=True)
+        target_x, target_y = 720, 470
+        target_bottom = target_y - CARD_H / 2
+        self.text(target_x, target_bottom + CARD_H + 34, f"{source.name} · 적 스킬", 14, CORAL, centered=True)
+
+        source_x, source_y = self._unit_position(battle, source)
+        progress = max(
+            0.0,
+            min(1.0, (now - battle.enemy_skill_reveal_started_at) / CARD_ANIMATION_DURATION),
+        )
+        eased = 1.0 - (1.0 - progress) ** 3
+        visual_scale = 0.08 + 0.92 * eased
+        center_x = source_x + (target_x - source_x) * eased
+        center_y = source_y + (target_y - source_y) * eased
+        draw_w = max(2, round(CARD_W * visual_scale))
+        draw_h = max(2, round(CARD_H * visual_scale))
+        content_scale = visual_scale * CARD_LAYOUT_SCALE
         self._draw_card_rect(
-            center_x, center_y, CARD_W, CARD_H, (31, 37, 50), inset=CARD_BACKGROUND_INSET
+            center_x,
+            center_y,
+            draw_w,
+            draw_h,
+            (31, 37, 50),
+            inset=round(CARD_BACKGROUND_INSET * visual_scale),
         )
 
-        content_scale = CARD_LAYOUT_SCALE
-        visual_bottom = center_y - CARD_H / 2
-        self.text(
-            center_x,
-            visual_bottom + CARD_H - 22 * content_scale,
-            skill.name,
-            round(14 * content_scale),
-            source.accent,
-            centered=True,
-        )
-        description_lines = textwrap.wrap(skill.description, width=9)[:2] or [skill.description]
-        description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
-        for line_index, line in enumerate(description_lines):
+        if progress >= 0.82:
+            visual_bottom = center_y - draw_h / 2
             self.text(
                 center_x,
-                description_start_y - line_index * 14 * content_scale,
-                line,
-                round(11 * content_scale),
-                TEXT,
+                visual_bottom + draw_h - 22 * content_scale,
+                skill.name,
+                max(10, round(14 * content_scale)),
+                source.accent,
                 centered=True,
             )
-        effect = skill.short_effect()
-        self.text(
-            center_x,
-            visual_bottom + 20 * content_scale,
-            f"×{skill.power:.2f} · {effect}",
-            round(10 * content_scale),
-            MINT if skill.status_key else MUTED,
-            centered=True,
-        )
+            description_lines = textwrap.wrap(skill.description, width=9)[:2] or [skill.description]
+            description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
+            for line_index, line in enumerate(description_lines):
+                self.text(
+                    center_x,
+                    description_start_y - line_index * 14 * content_scale,
+                    line,
+                    max(9, round(11 * content_scale)),
+                    TEXT,
+                    centered=True,
+                )
+            self.text(
+                center_x,
+                visual_bottom + 20 * content_scale,
+                f"×{skill.power:.2f} · {skill.short_effect()}",
+                max(9, round(10 * content_scale)),
+                MINT if skill.status_key else MUTED,
+                centered=True,
+            )
 
         frame_key = {
             "glass_wraith": "C",
             "ash_hound": "D",
             "floor1_guardian": "A",
         }.get(source.unit_id, "D")
-        self.image(self.card_frames[frame_key], center_x, center_y, CARD_W, CARD_H)
+        self.image(self.card_frames[frame_key], center_x, center_y, draw_w, draw_h)
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"
