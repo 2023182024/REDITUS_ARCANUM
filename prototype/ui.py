@@ -84,6 +84,9 @@ class BattleScreen:
             )
             for character_id in "ABCD"
         }
+        self.card_frames["enemy"] = p2d.load_image(
+            str(asset_root / "images" / "card_frames" / "reditus_card_frame_enemy.png")
+        )
         self.action_cursor = 0
         self.target_enemy_id: str | None = None
         self.focus_actor_id: str | None = None
@@ -417,12 +420,7 @@ class BattleScreen:
                 centered=True,
             )
 
-        frame_key = {
-            "glass_wraith": "C",
-            "ash_hound": "D",
-            "floor1_guardian": "A",
-        }.get(source.unit_id, "D")
-        self.image(self.card_frames[frame_key], center_x, center_y, draw_w, draw_h)
+        self.image(self.card_frames["enemy"], center_x, center_y, draw_w, draw_h)
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"
