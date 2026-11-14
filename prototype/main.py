@@ -44,8 +44,11 @@ def main() -> None:
                         if mode == "battle" and battle:
                             screen.handle_key(battle, event.key)
                         elif mode in ("select", "map", "complete"):
-                            mode = "title"
-                            selected_character_id = None
+                            if mode == "map" and screen.deck_preview_character_id:
+                                screen.close_deck_preview()
+                            else:
+                                mode = "title"
+                                selected_character_id = None
                         else:
                             running = False
                     elif mode == "select" and event.key == p2d.SDLK_RETURN and selected_character_id:
@@ -72,21 +75,34 @@ def main() -> None:
                             floor_map = FloorOne()
                             mode = "map"
                     elif mode == "map" and floor_map and selected_character_id:
-                        if screen.map_restart_clicked(x, y):
+                        if screen.deck_preview_character_id:
+                            if screen.map_deck_preview_close_clicked(x, y):
+                                screen.close_deck_preview()
+                            else:
+                                clicked_character = screen.map_character_at(x, y)
+                                if clicked_character:
+                                    screen.toggle_deck_preview(clicked_character)
+                                else:
+                                    screen.close_deck_preview()
+                        elif screen.map_restart_clicked(x, y):
                             mode = "title"
                             selected_character_id = None
                         else:
-                            node_id = screen.map_node_at(x, y, floor_map)
-                            if node_id == "shop":
-                                floor_map.complete_node(node_id)
-                                map_notice = "상점 콘텐츠는 미구현이라 구매 없이 다음 경로로 이동합니다."
-                                map_notice_until = time.monotonic() + 3.0
-                            elif node_id and node_id in ("battle_1", "battle_2", "boss"):
-                                encounter = "floor1_boss" if node_id == "boss" else "corridor"
-                                battle = Battle([selected_character_id], encounter)
-                                active_node_id = node_id
-                                return_to_map_at = None
-                                mode = "battle"
+                            clicked_character = screen.map_character_at(x, y)
+                            if clicked_character:
+                                screen.toggle_deck_preview(clicked_character)
+                            else:
+                                node_id = screen.map_node_at(x, y, floor_map)
+                                if node_id == "shop":
+                                    floor_map.complete_node(node_id)
+                                    map_notice = "상점 콘텐츠는 미구현이라 구매 없이 다음 경로로 이동합니다."
+                                    map_notice_until = time.monotonic() + 3.0
+                                elif node_id and node_id in ("battle_1", "battle_2", "boss"):
+                                    encounter = "floor1_boss" if node_id == "boss" else "corridor"
+                                    battle = Battle([selected_character_id], encounter)
+                                    active_node_id = node_id
+                                    return_to_map_at = None
+                                    mode = "battle"
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         mode = "title"
                         selected_character_id = None
