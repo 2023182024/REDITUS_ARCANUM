@@ -5,9 +5,9 @@ from __future__ import annotations
 import textwrap
 
 from campaign import FloorOne
-from cards import starter_deck
+from cards import PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
 from units import character_info
-from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT
+from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH
 
 import pico2d as p2d
 
@@ -22,6 +22,7 @@ class CampaignScreen(BattleScreen):
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
         self.deck_preview_character_id: str | None = None
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
+        self.reward_choice_rects: list[tuple[int, int, int, int]] = []
         self.map_restart_rect = (50, 868, 202, 910)
         self.complete_rect = (540, 245, 900, 330)
 
@@ -65,7 +66,13 @@ class CampaignScreen(BattleScreen):
         self.text(720, 165, "1층 맵으로", 19, GOLD if selected_id else MUTED, centered=True)
         p2d.update_canvas()
 
-    def draw_map(self, floor_map: FloorOne, character_id: str, notice: str = "") -> None:
+    def draw_map(
+        self,
+        floor_map: FloorOne,
+        character_id: str,
+        notice: str = "",
+        deck_cards: list[SkillCard] | None = None,
+    ) -> None:
         self._clear_page()
         self.map_node_rects.clear()
         self.map_character_rects.clear()
@@ -87,7 +94,7 @@ class CampaignScreen(BattleScreen):
             self.panel(510, 842, 730, 38, (50, 45, 39), GOLD)
             self.text(875, 861, notice[:62], 13, GOLD, centered=True)
         if self.deck_preview_character_id:
-            self._draw_deck_preview(self.deck_preview_character_id)
+            self._draw_deck_preview(self.deck_preview_character_id, deck_cards)
         p2d.update_canvas()
 
     def _draw_route_panel(self, character_id: str) -> None:
@@ -140,25 +147,30 @@ class CampaignScreen(BattleScreen):
             status = f"{kind_label}  ·  {status_label}"
         self.text(node.x, node.y - 15, status, 13, GOLD if state == "available" else MUTED, centered=True)
 
-    def _draw_deck_preview(self, character_id: str) -> None:
+    def _draw_deck_preview(self, character_id: str, deck_cards: list[SkillCard] | None) -> None:
         data = character_info(character_id)
+        cards = deck_cards if deck_cards is not None else starter_deck(character_id)
         self.panel(330, 160, 1080, 640, (18, 24, 37), GOLD)
         self.text(870, 756, f"{data['name']} · 스킬 덱", 25, data["accent"], centered=True)
-        self.text(870, 720, "카드 5장", 13, MUTED, centered=True)
+        self.text(870, 720, f"카드 {len(cards)}장", 13, MUTED, centered=True)
         close = self.deck_preview_close_rect
         self.panel(close[0], close[1], close[2] - close[0], close[3] - close[1], PANEL_LIGHT, GOLD)
         self.text((close[0] + close[2]) / 2, (close[1] + close[3]) / 2, "닫기", 13, GOLD, centered=True)
         card_width = 164
         card_height = round(card_width * 188 / 140)
         card_gap = 18
-        total_width = card_width * 5 + card_gap * 4
-        first_x = 870 - total_width / 2
-        card_y = 360
-        content_scale = card_height / 188
-        for index, card in enumerate(starter_deck(character_id)):
-            card_x = first_x + index * (card_width + card_gap)
+        row_count = max(1, (len(cards) + 4) // 5)
+        for index, card in enumerate(cards):
+            row = index // 5
+            row_start = row * 5
+            row_items = min(5, len(cards) - row_start)
+            total_width = card_width * row_items + card_gap * (row_items - 1)
+            first_x = 870 - total_width / 2
+            card_x = first_x + (index - row_start) * (card_width + card_gap)
+            card_y = 360 if row_count == 1 else (455 if row == 0 else 207)
             center_x = card_x + card_width / 2
             center_y = card_y + card_height / 2
+            content_scale = card_height / 188
             self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
             self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
             lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
@@ -174,6 +186,58 @@ class CampaignScreen(BattleScreen):
 
     def close_deck_preview(self) -> None:
         self.deck_preview_character_id = None
+
+    def draw_reward_choice(
+        self,
+        character_id: str,
+        reward_options: list[tuple[str, SkillCard]],
+        cursor: int,
+    ) -> None:
+        self._clear_page()
+        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        self.panel(110, 140, 1220, 680, (18, 24, 37), GOLD)
+        data = character_info(character_id)
+        self.text(720, 777, "전투 승리 · 스킬 보상", 29, GOLD, centered=True)
+        self.text(720, 738, f"{data['name']}의 덱에 추가할 적 스킬을 선택하세요", 16, TEXT, centered=True)
+        self.reward_choice_rects.clear()
+        if not reward_options:
+            self.text(720, 475, "선택할 스킬이 없습니다.", 18, MUTED, centered=True)
+            p2d.update_canvas()
+            return
+
+        card_width = min(220, (1120 - 24 * (len(reward_options) - 1)) // len(reward_options))
+        card_height = round(card_width * 188 / 140)
+        card_gap = 24
+        total_width = card_width * len(reward_options) + card_gap * (len(reward_options) - 1)
+        first_x = 720 - total_width / 2
+        card_y = 320
+        content_scale = card_height / 188
+        for index, (source_name, card) in enumerate(reward_options):
+            card_x = first_x + index * (card_width + card_gap)
+            center_x = card_x + card_width / 2
+            center_y = card_y + card_height / 2
+            rect = (round(card_x), card_y, round(card_x + card_width), card_y + card_height)
+            self.reward_choice_rects.append(rect)
+            if index == cursor:
+                self._draw_card_rect(center_x, center_y, card_width, card_height, GOLD, inset=-5, filled=False)
+            self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
+            self.text(center_x, card_y + card_height + 18, source_name, 13, MUTED, centered=True)
+            self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
+            lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+            description_y = card_y + (58 if len(lines) > 1 else 51) * content_scale
+            for line_index, line in enumerate(lines):
+                self.text(center_x, description_y - line_index * 14 * content_scale, line, round(11 * content_scale), TEXT, centered=True)
+            effect_color = MINT if card.status_key else MUTED
+            self.text(center_x, card_y + 20 * content_scale, f"×{card.power * PLAYER_CARD_DAMAGE_SCALE:.2f} · {card.short_effect()}", round(10 * content_scale), effect_color, centered=True)
+            self.image(self.card_frames[character_id], center_x, center_y, card_width, card_height)
+        self.text(720, 205, "← / → 선택  ·  Space 결정  ·  마우스 클릭", 14, MUTED, centered=True)
+        p2d.update_canvas()
+
+    def reward_choice_at(self, x: int, y: int) -> int | None:
+        for index, rect in enumerate(self.reward_choice_rects):
+            if self._inside(x, y, rect):
+                return index
+        return None
 
     def draw_floor_complete(self) -> None:
         self._clear_page()

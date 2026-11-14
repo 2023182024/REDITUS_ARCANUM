@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from cards import SkillCard, enemy_skills, starter_deck
 from status_effects import StatusCollection
@@ -85,7 +85,10 @@ class Enemy(Combatant):
         return random.choice(self.skills)
 
 
-def create_party(character_ids: list[str] | None = None) -> list[PlayerCharacter]:
+def create_party(
+    character_ids: list[str] | None = None,
+    decks: dict[str, list[SkillCard]] | None = None,
+) -> list[PlayerCharacter]:
     selected_ids = character_ids if character_ids is not None else list(CHARACTER_DATA)
     party: list[PlayerCharacter] = []
     for character_id in selected_ids:
@@ -100,7 +103,11 @@ def create_party(character_ids: list[str] | None = None) -> list[PlayerCharacter
             speed=data["speed"],
             accent=data["accent"],
             trait_text=data["trait"],
-            deck=starter_deck(character_id),
+            deck=(
+                [replace(card) for card in decks[character_id]]
+                if decks and character_id in decks
+                else starter_deck(character_id)
+            ),
         )
         random.shuffle(character.deck)
         character.draw(3)

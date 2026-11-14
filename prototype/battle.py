@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from cards import SkillCard
 from units import Combatant, Enemy, PlayerCharacter, create_enemies, create_party
@@ -31,10 +31,20 @@ class Battle:
     GOOD_MULTIPLIER = 1.0
     MISS_MULTIPLIER = 0.5
 
-    def __init__(self, character_ids: list[str] | None = None, encounter_id: str = "corridor") -> None:
+    def __init__(
+        self,
+        character_ids: list[str] | None = None,
+        encounter_id: str = "corridor",
+        decks: dict[str, list[SkillCard]] | None = None,
+    ) -> None:
         self.character_ids = list(character_ids) if character_ids is not None else list("ABCD")
         self.encounter_id = encounter_id
-        self.party = create_party(self.character_ids)
+        self.deck_templates = {
+            character_id: [replace(card) for card in decks[character_id]]
+            for character_id in self.character_ids
+            if decks and character_id in decks
+        }
+        self.party = create_party(self.character_ids, self.deck_templates)
         self.enemies = create_enemies(encounter_id)
         self.round = 1
         self.order: list[TurnEntry] = []
@@ -342,5 +352,5 @@ class Battle:
             self._prepare_actor()
 
     def reset(self) -> None:
-        self.__init__(self.character_ids, self.encounter_id)
+        self.__init__(self.character_ids, self.encounter_id, self.deck_templates)
 

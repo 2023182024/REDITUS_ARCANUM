@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 PLAYER_CARD_DAMAGE_SCALE = 0.5
@@ -66,6 +66,11 @@ def starter_deck(character_id: str) -> list[SkillCard]:
     for card in player_cards:
         card.power *= PLAYER_CARD_DAMAGE_SCALE
     return player_cards
+
+
+def player_reward_card(enemy_skill: SkillCard) -> SkillCard:
+    """Copy an enemy skill into a player deck at normal player-card damage scale."""
+    return replace(enemy_skill, power=enemy_skill.power * PLAYER_CARD_DAMAGE_SCALE)
 
 
 def enemy_skills(enemy_id: str) -> list[SkillCard]:
