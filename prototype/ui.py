@@ -32,7 +32,7 @@ PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
-CANCEL_TARGET_RECT = (810, 268, 916, 310)
+CANCEL_TARGET_RECT = (650, 22, 790, 70)
 CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
 CARD_HOVER_DURATION = 0.16
@@ -230,11 +230,7 @@ class BattleScreen:
         elif battle.phase == "defeat":
             self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
         elif battle.phase == "player" and battle.selected_card:
-            card = battle.selected_card
-            self.panel(458, 265, 470, 132, (27, 34, 50), GOLD)
-            self.text(693, 355, card.name, 24, GOLD, centered=True)
-            self.text(693, 318, card.description, 16, TEXT, centered=True)
-            self.text(625, 286, "공격할 적을 선택하세요", 15, MUTED, centered=True)
+            self._draw_selected_target_card(battle)
             cancel = CANCEL_TARGET_RECT
             self.panel(cancel[0], cancel[1], cancel[2] - cancel[0], cancel[3] - cancel[1], PANEL_LIGHT, GOLD)
             self.text((cancel[0] + cancel[2]) / 2, (cancel[1] + cancel[3]) / 2, "취소", 14, GOLD, centered=True)
@@ -242,6 +238,52 @@ class BattleScreen:
             if target:
                 _, target_y = self._enemy_position(battle, target)
                 self._draw_target_arrow(930, 478, 1170, target_y)
+
+    def _draw_selected_target_card(self, battle: Battle) -> None:
+        hero = battle.active
+        card = battle.selected_card
+        if not hero or not card:
+            return
+
+        center_x, center_y = 720, 480
+        self._draw_card_rect(
+            center_x,
+            center_y,
+            CARD_W,
+            CARD_H,
+            (31, 37, 50),
+            inset=CARD_BACKGROUND_INSET,
+        )
+        content_scale = CARD_LAYOUT_SCALE
+        visual_bottom = center_y - CARD_H / 2
+        self.text(
+            center_x,
+            visual_bottom + CARD_H - 22 * content_scale,
+            card.name,
+            round(14 * content_scale),
+            hero.accent,
+            centered=True,
+        )
+        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+        description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
+        for line_index, line in enumerate(description_lines):
+            self.text(
+                center_x,
+                description_start_y - line_index * 14 * content_scale,
+                line,
+                round(11 * content_scale),
+                TEXT,
+                centered=True,
+            )
+        self.text(
+            center_x,
+            visual_bottom + 20 * content_scale,
+            f"×{card.power:.2f} · {card.short_effect()}",
+            round(10 * content_scale),
+            MINT if card.status_key else MUTED,
+            centered=True,
+        )
+        self.image(self.card_frames[hero.unit_id], center_x, center_y, CARD_W, CARD_H)
 
     def _draw_hero(self, hero: PlayerCharacter, x: int, y: int, battle: Battle) -> None:
         active = hero is battle.active
