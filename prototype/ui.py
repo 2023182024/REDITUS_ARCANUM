@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import time
+import textwrap
 from pathlib import Path
 
 import pico2d as p2d
@@ -17,10 +18,10 @@ DESIGN_WIDTH, DESIGN_HEIGHT = 1440, 960
 WIDTH, HEIGHT = 1280, 720
 SCALE_X = WIDTH / DESIGN_WIDTH
 SCALE_Y = HEIGHT / DESIGN_HEIGHT
-CARD_W = 170
-CARD_H = 145
-CARD_POSITIONS = ((460, 560), (680, 560), (460, 375), (680, 375), (460, 190))
-REST_RECT = (680, 190, 850, 335)
+CARD_W = 140
+CARD_H = 188
+CARD_POSITIONS = ((450, 572), (620, 572), (450, 371), (620, 371), (450, 170))
+REST_RECT = (620, 170, 760, 358)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
 PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 CANCEL_TARGET_RECT = (810, 268, 916, 310)
@@ -60,6 +61,12 @@ class BattleScreen:
         self.attack_effects = {
             key: p2d.load_image(str(asset_root / "images" / "effects" / filename))
             for key, filename in effect_files.items()
+        }
+        self.card_frames = {
+            character_id: p2d.load_image(
+                str(asset_root / "images" / "card_frames" / f"reditus_card_frame_{character_id.lower()}.png")
+            )
+            for character_id in "ABCD"
         }
         self.action_cursor = 0
         self.target_enemy_id: str | None = None
@@ -352,14 +359,14 @@ class BattleScreen:
         self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
 
     def _draw_action_cards(self, battle: Battle, now: float) -> None:
-        """Show cards only while the active player is choosing a skill."""
+        """Draw portrait skill cards with a blank art window and text in fixed bands."""
         if battle.phase != "player" or not battle.active or battle.selected_card:
             return
         hero = battle.active
         action_indices = list(range(min(len(hero.hand), 5))) + [5]
         if self.action_cursor not in action_indices:
             self.action_cursor = action_indices[0]
-        self.text(720, 730, f"{hero.name} · 사용할 스킬을 선택하세요", 16, hero.accent, centered=True)
+        self.text(720, 773, f"{hero.name} · 사용할 스킬을 선택하세요", 14, hero.accent, centered=True)
         hero_index = battle.party.index(hero)
         origin_x, origin_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
         for card_index, (card, (card_x, card_y)) in enumerate(zip(hero.hand[:5], CARD_POSITIONS)):
@@ -376,22 +383,57 @@ class BattleScreen:
             draw_x = round(center_x - draw_w / 2)
             draw_y = round(center_y - draw_h / 2)
             focused = card_index == self.action_cursor
-            border = GOLD if focused else hero.accent
-            fill = (53, 48, 39) if focused else (39, 45, 61)
-            self.panel(draw_x, draw_y, draw_w, draw_h, fill, border)
-            if progress >= 0.74:
-                self.rect(card_x + 7, card_y + CARD_H - 8, CARD_W - 14, 4, hero.accent)
+            fill = (52, 48, 42) if focused else (31, 37, 50)
+            if focused:
+                self.rect(draw_x - 3, draw_y - 3, draw_w + 6, draw_h + 6, GOLD)
+            self.rect(draw_x, draw_y, draw_w, draw_h, fill)
+
             if progress >= 0.82:
-                self.text(card_x + CARD_W / 2, card_y + 112, card.name, 17, TEXT, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 80, card.description[:15], 12, MUTED, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 48, f"피해 배율 ×{card.power:.2f}", 13, GOLD, centered=True)
-                self.text(card_x + CARD_W / 2, card_y + 24, card.short_effect(), 13, MINT if card.status_key else MUTED, centered=True)
+                title_color = GOLD if focused else hero.accent
+                self.text(
+                    card_x + CARD_W / 2,
+                    card_y + CARD_H - 22,
+                    card.name,
+                    14,
+                    title_color,
+                    centered=True,
+                )
+                description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+                description_start_y = card_y + (58 if len(description_lines) > 1 else 51)
+                for line_index, line in enumerate(description_lines):
+                    self.text(
+                        card_x + CARD_W / 2,
+                        description_start_y - line_index * 14,
+                        line,
+                        11,
+                        TEXT,
+                        centered=True,
+                    )
+                self.text(
+                    card_x + CARD_W / 2,
+                    card_y + 20,
+                    f"×{card.power:.2f} · {card.short_effect()}",
+                    10,
+                    MINT if card.status_key else MUTED,
+                    centered=True,
+                )
+
+            frame = self.card_frames[hero.unit_id]
+            self.image(frame, center_x, center_y, draw_w, draw_h)
 
         rest = REST_RECT
         rest_focused = self.action_cursor == 5
-        self.panel(rest[0], rest[1], rest[2] - rest[0], rest[3] - rest[1], (57, 50, 41) if rest_focused else PANEL_LIGHT, GOLD if rest_focused else LINE)
-        self.text((rest[0] + rest[2]) / 2, 267, "휴식", 18, GOLD if rest_focused else TEXT, centered=True)
-        self.text((rest[0] + rest[2]) / 2, 237, "카드 보충", 12, MUTED, centered=True)
+        self.panel(
+            rest[0],
+            rest[1],
+            rest[2] - rest[0],
+            rest[3] - rest[1],
+            (57, 50, 41) if rest_focused else PANEL_LIGHT,
+            GOLD if rest_focused else LINE,
+        )
+        center_x = (rest[0] + rest[2]) / 2
+        self.text(center_x, rest[1] + 113, "휴식", 18, GOLD if rest_focused else TEXT, centered=True)
+        self.text(center_x, rest[1] + 77, "카드 보충", 12, MUTED, centered=True)
 
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
         """Use the pointer to focus cards or the nearest living enemy."""
