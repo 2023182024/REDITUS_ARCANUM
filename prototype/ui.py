@@ -78,6 +78,7 @@ class BattleScreen:
         self.battle_background = p2d.load_image(
             str(asset_root / "images" / "backgrounds" / "floor1_battle_background.png")
         )
+        self.target_arrow = p2d.load_image(str(asset_root / "images" / "ui" / "target_arrow.png"))
         self.font_file = self._find_font()
         self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
@@ -400,7 +401,7 @@ class BattleScreen:
             target = self._focused_enemy(battle)
             if target:
                 _, target_y = self._enemy_position(battle, target)
-                self._draw_target_arrow(930, 478, 1170, target_y)
+                self._draw_target_arrow(1170, target_y)
 
     def _draw_selected_target_card(self, battle: Battle, now: float) -> None:
         hero = battle.active
@@ -664,10 +665,9 @@ class BattleScreen:
         if not victory:
             self.text(720, 503, "SPACE · 다시 전투", 16, GOLD, centered=True)
 
-    def _draw_target_arrow(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Draw only the arrowhead that marks the selected target."""
-        self.line(x2, y2, x2 - 28, y2 + 18, GOLD)
-        self.line(x2, y2, x2 - 28, y2 - 18, GOLD)
+    def _draw_target_arrow(self, tip_x: int, y: int) -> None:
+        """Show the outlined arrow image that marks the selected enemy."""
+        self.image(self.target_arrow, tip_x - 51, y, 120, 108)
 
     def _draw_action_cards(self, battle: Battle, now: float) -> None:
         """Draw portrait skill cards and smoothly enlarge the card under the pointer."""
