@@ -18,10 +18,11 @@ DESIGN_WIDTH, DESIGN_HEIGHT = 1440, 960
 WIDTH, HEIGHT = 1280, 720
 SCALE_X = WIDTH / DESIGN_WIDTH
 SCALE_Y = HEIGHT / DESIGN_HEIGHT
-CARD_W = 140
-CARD_H = 188
-CARD_POSITIONS = ((450, 572), (620, 572), (450, 371), (620, 371), (450, 170))
-REST_RECT = (620, 170, 760, 358)
+CARD_LAYOUT_SCALE = 1.266
+CARD_W = round(140 * CARD_LAYOUT_SCALE)
+CARD_H = round(188 * CARD_LAYOUT_SCALE)
+CARD_POSITIONS = ((410, 516), (625, 516), (410, 263), (625, 263), (410, 10))
+REST_RECT = (625, 10, 625 + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
 PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 CANCEL_TARGET_RECT = (810, 268, 916, 310)
@@ -29,9 +30,9 @@ CARD_ANIMATION_DURATION = 0.38
 CARD_ANIMATION_STAGGER = 0.06
 CARD_HOVER_DURATION = 0.16
 CARD_HOVER_SCALE = 0.10
-CARD_HOVER_LIFT = 13
-CARD_BACKGROUND_INSET = 8
-CARD_FOCUS_PADDING = 3
+CARD_HOVER_LIFT = 17
+CARD_BACKGROUND_INSET = 10
+CARD_FOCUS_PADDING = 4
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -403,8 +404,7 @@ class BattleScreen:
 
             draw_w = max(2, round(CARD_W * visual_scale))
             draw_h = max(2, round(CARD_H * visual_scale))
-            draw_x = round(center_x - draw_w / 2)
-            draw_y = round(center_y - draw_h / 2)
+            content_scale = visual_scale * CARD_LAYOUT_SCALE
             focused = card_index == self.action_cursor
             if focused:
                 self._draw_card_rect(
@@ -419,28 +419,28 @@ class BattleScreen:
                 visual_bottom = center_y - draw_h / 2
                 self.text(
                     center_x,
-                    visual_bottom + draw_h - 22 * visual_scale,
+                    visual_bottom + draw_h - 22 * content_scale,
                     card.name,
-                    max(10, round(14 * visual_scale)),
+                    max(10, round(14 * content_scale)),
                     title_color,
                     centered=True,
                 )
                 description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
-                description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * visual_scale
+                description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
                 for line_index, line in enumerate(description_lines):
                     self.text(
                         center_x,
-                        description_start_y - line_index * 14 * visual_scale,
+                        description_start_y - line_index * 14 * content_scale,
                         line,
-                        max(9, round(11 * visual_scale)),
+                        max(9, round(11 * content_scale)),
                         TEXT,
                         centered=True,
                     )
                 self.text(
                     center_x,
-                    visual_bottom + 20 * visual_scale,
+                    visual_bottom + 20 * content_scale,
                     f"×{card.power:.2f} · {card.short_effect()}",
-                    max(9, round(10 * visual_scale)),
+                    max(9, round(10 * content_scale)),
                     MINT if card.status_key else MUTED,
                     centered=True,
                 )
@@ -450,17 +450,14 @@ class BattleScreen:
 
         rest = REST_RECT
         rest_focused = self.action_cursor == 5
-        self.panel(
-            rest[0],
-            rest[1],
-            rest[2] - rest[0],
-            rest[3] - rest[1],
-            (57, 50, 41) if rest_focused else PANEL_LIGHT,
-            GOLD if rest_focused else LINE,
-        )
         center_x = (rest[0] + rest[2]) / 2
-        self.text(center_x, rest[1] + 113, "휴식", 18, GOLD if rest_focused else TEXT, centered=True)
-        self.text(center_x, rest[1] + 77, "카드 보충", 12, MUTED, centered=True)
+        center_y = (rest[1] + rest[3]) / 2
+        rest_fill = (57, 50, 41) if rest_focused else PANEL_LIGHT
+        rest_border = GOLD if rest_focused else LINE
+        self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_fill)
+        self._draw_card_rect(center_x, center_y, CARD_W, CARD_H, rest_border, filled=False)
+        self.text(center_x, rest[1] + 113 * CARD_LAYOUT_SCALE, "휴식", round(18 * CARD_LAYOUT_SCALE), GOLD if rest_focused else TEXT, centered=True)
+        self.text(center_x, rest[1] + 77 * CARD_LAYOUT_SCALE, "카드 보충", round(12 * CARD_LAYOUT_SCALE), MUTED, centered=True)
 
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
         """Use pointer hover to focus cards or the nearest living enemy."""
