@@ -48,6 +48,9 @@ BLUE = (116, 172, 226)
 class BattleScreen:
     def __init__(self, asset_root: Path) -> None:
         self.asset_root = asset_root
+        self.battle_background = p2d.load_image(
+            str(asset_root / "images" / "backgrounds" / "floor1_battle_background.png")
+        )
         self.font_file = self._find_font()
         self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
@@ -142,7 +145,7 @@ class BattleScreen:
     def draw(self, battle: Battle, now: float) -> None:
         self._sync_focus(battle)
         p2d.clear_canvas()
-        self.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, INK)
+        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self._draw_header(battle)
         self._draw_order(battle)
         self._draw_battlefield(battle, now)
@@ -180,7 +183,7 @@ class BattleScreen:
                 self.text(x + 82, 825, "DOWN", 12, MUTED, centered=True)
 
     def _draw_battlefield(self, battle: Battle, now: float) -> None:
-        self.panel(28, 160, 1384, 618, (19, 25, 39), (54, 66, 86))
+        self.rect(28, 160, 1384, 618, (54, 66, 86), filled=False)
         self.text(48, 753, "전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
         self.panel(48, 205, 1344, 44, (24, 31, 46), (45, 55, 72))
