@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, replace
 
 from cards import SkillCard
+from status_effects import StatusCollection
 from units import Combatant, Enemy, PlayerCharacter, create_enemies, create_party
 
 
@@ -36,15 +37,37 @@ class Battle:
         character_ids: list[str] | None = None,
         encounter_id: str = "corridor",
         decks: dict[str, list[SkillCard]] | None = None,
+        relic_ids: list[str] | None = None,
+        roster: list[PlayerCharacter] | None = None,
     ) -> None:
-        self.character_ids = list(character_ids) if character_ids is not None else list("ABCD")
+        self.character_ids = (
+            [hero.unit_id for hero in roster]
+            if roster is not None
+            else list(character_ids) if character_ids is not None else list("ABCD")
+        )
         self.encounter_id = encounter_id
+        self.relic_ids = list(relic_ids or [])
         self.deck_templates = {
             character_id: [replace(card) for card in decks[character_id]]
             for character_id in self.character_ids
             if decks and character_id in decks
         }
-        self.party = create_party(self.character_ids, self.deck_templates)
+        if roster is None:
+            self.party = create_party(self.character_ids, self.deck_templates)
+        else:
+            self.party = roster
+            for hero in self.party:
+                hero.deck.extend(hero.hand)
+                hero.deck.extend(hero.discard)
+                random.shuffle(hero.deck)
+                hero.hand.clear()
+                hero.discard.clear()
+                hero.draw(3)
+                hero.hp = hero.max_hp
+                hero.alive = True
+                hero.statuses = StatusCollection()
+                hero.rested = False
+                hero.perfect_stacks = 0
         self.enemies = create_enemies(encounter_id)
         self.round = 1
         self.order: list[TurnEntry] = []
@@ -73,6 +96,17 @@ class Battle:
         self.log_lines: list[str] = []
         self.roll_by_id: dict[str, int] = {}
         self.rng = random.Random()
+        self.pending_speed_bonus_ids: set[str] = set()
+        self.first_allied_actor_id: str | None = None
+        self.first_ally_attack_used = False
+        self.first_enemy_kill_extra_used = False
+        self.empty_hand_relic_used = False
+        self.fortune_coin_used = False
+        self.pending_extra_actions: list[PlayerCharacter] = []
+        self.immortal_goblet_used = False
+        self.life_crystal_used_ids: set[str] = set()
+        self.time_shard_used_ids: set[str] = set()
+        self.next_attack_bonus_pct: dict[str, float] = {}
         self._build_order()
         self._note("전투 시작 · 캐릭터별 덱에서 손패 3장을 뽑았습니다.")
         self._prepare_actor()
@@ -89,11 +123,78 @@ class Battle:
         self.log_lines.insert(0, message)
         self.log_lines = self.log_lines[:4]
 
+    def _has_relic(self, relic_id: str) -> bool:
+        return relic_id in self.relic_ids
+
+    def _queue_extra_action(self, hero: PlayerCharacter) -> None:
+        if not self.order or self.order_index >= len(self.order):
+            self.pending_extra_actions.append(hero)
+        else:
+            self.order.insert(
+                self.order_index + 1,
+                TurnEntry(hero, self.roll_by_id.get(hero.unit_id, 1)),
+            )
+        self._note(f"{hero.name} · 유물 효과로 추가 행동을 얻었습니다.")
+
+    def _receive_hit(self, target: Combatant, damage: float) -> int:
+        previous_hp = target.hp
+        amount = target.receive_hit(damage)
+        if not isinstance(target, PlayerCharacter):
+            return amount
+
+        if not target.alive and self._has_relic("immortal_goblet") and not self.immortal_goblet_used:
+            self.immortal_goblet_used = True
+            target.hp = min(target.max_hp, 1 + round(target.max_hp * 0.1))
+            target.alive = True
+            self._note(f"불멸의 성배 · {target.name}이 치명상을 버티고 회복했습니다.")
+
+        crossed_low_health = (
+            amount > 0
+            and previous_hp > target.max_hp * 0.3
+            and target.hp > 0
+            and target.hp <= target.max_hp * 0.3
+        )
+        if crossed_low_health and self._has_relic("life_crystal") and target.unit_id not in self.life_crystal_used_ids:
+            self.life_crystal_used_ids.add(target.unit_id)
+            recovery = round(target.max_hp * 0.3)
+            target.hp = min(target.max_hp, target.hp + recovery)
+            self._note(f"생명의 수정 · {target.name} 체력 {recovery} 회복")
+        if crossed_low_health and self._has_relic("time_shard") and target.unit_id not in self.time_shard_used_ids:
+            self.time_shard_used_ids.add(target.unit_id)
+            self._queue_extra_action(target)
+            self._note(f"시간의 파편 · {target.name}이 다음 행동을 얻었습니다.")
+        return amount
+
     def _build_order(self) -> None:
         actors = [unit for unit in (*self.party, *self.enemies) if unit.alive]
         self.roll_by_id = {unit.unit_id: self.rng.randint(1, 6) for unit in actors}
-        actors.sort(key=lambda unit: (-unit.effective_speed(), -self.roll_by_id[unit.unit_id]))
+        def order_speed(unit: Combatant) -> int:
+            bonus = round(unit.speed * 0.1) if unit.unit_id in self.pending_speed_bonus_ids else 0
+            return unit.effective_speed() + bonus
+
+        actors.sort(key=lambda unit: (-order_speed(unit), -self.roll_by_id[unit.unit_id]))
         self.order = [TurnEntry(unit, self.roll_by_id[unit.unit_id]) for unit in actors]
+        if self.round == 1:
+            self.first_allied_actor_id = next(
+                (entry.actor.unit_id for entry in self.order if isinstance(entry.actor, PlayerCharacter)),
+                None,
+            )
+            if "fortune_coin" in self.relic_ids and not self.fortune_coin_used and self.party:
+                favored = self.rng.choice(self.party)
+                favored_index = next(
+                    index for index, entry in enumerate(self.order) if entry.actor is favored
+                )
+                self.order.insert(favored_index + 1, TurnEntry(favored, self.roll_by_id[favored.unit_id]))
+                self.fortune_coin_used = True
+        for hero in self.pending_extra_actions:
+            hero_index = next(
+                (index for index, entry in enumerate(self.order) if entry.actor is hero),
+                None,
+            )
+            if hero_index is not None:
+                self.order.insert(hero_index + 1, TurnEntry(hero, self.roll_by_id[hero.unit_id]))
+        self.pending_extra_actions.clear()
+        self.pending_speed_bonus_ids.clear()
         self.order_index = 0
 
     def _check_battle_end(self) -> bool:
@@ -150,8 +251,11 @@ class Battle:
                 continue
             bleed_damage, removed = unit.statuses.end_round()
             if bleed_damage:
-                unit.hp = max(0, unit.hp - bleed_damage)
-                unit.alive = unit.hp > 0
+                if isinstance(unit, PlayerCharacter):
+                    self._receive_hit(unit, bleed_damage)
+                else:
+                    unit.hp = max(0, unit.hp - bleed_damage)
+                    unit.alive = unit.hp > 0
                 self._note(f"{unit.name} · 출혈 피해 {bleed_damage}.")
             for key in removed:
                 label = {"bleed": "출혈", "slow": "둔화", "rest_lock": "강박"}[key]
@@ -198,6 +302,11 @@ class Battle:
         self.good_window = card.good_window + bonus
         self.timing_bonus = bonus
         self.phase = "attack_timing"
+        if not hero.hand and self._has_relic("cycle_compass") and not self.empty_hand_relic_used:
+            self.empty_hand_relic_used = True
+            drawn = hero.draw(1)
+            if drawn:
+                self._note(f"순환의 나침반 · {hero.name}이 카드 1장을 뽑았습니다.")
         self._note(f"{hero.name} · {card.name} · SPACE로 타이밍 입력")
 
     def select_card(self, hero: PlayerCharacter, card: SkillCard) -> None:
@@ -226,6 +335,15 @@ class Battle:
             hero.statuses.consume("rest_lock")
         amount = 2 if hero.unit_id == "C" else 1
         drawn = hero.draw(amount)
+        if (
+            self._has_relic("old_pen")
+            and len(hero.hand) < 5
+            and self.rng.random() < 0.1
+        ):
+            extra_drawn = hero.draw(1)
+            drawn += extra_drawn
+            if extra_drawn:
+                self._note(f"낡은 만년필 · {hero.name}이 카드 1장을 추가로 뽑았습니다.")
         hero.rested = True
         hero.statuses.rest_tick()
         self._note(f"{hero.name} · 휴식 · 카드 {drawn}장 보충, 적의 표적이 될 확률 감소")
@@ -274,7 +392,22 @@ class Battle:
         weak = hero.statuses.consume("weak")
         weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
         stack_scale = 1 + hero.perfect_stacks * 0.12 if hero.unit_id == "D" else 1.0
-        damage = hero.attack * card.power * multiplier * weak_scale * stack_scale
+        relic_bonus_pct = self.next_attack_bonus_pct.pop(hero.unit_id, 0.0)
+        if quality == "PERFECT" and self._has_relic("precision_clock"):
+            relic_bonus_pct += 0.10
+        if (
+            hero.unit_id == self.first_allied_actor_id
+            and not self.first_ally_attack_used
+            and self._has_relic("first_strike_charm")
+        ):
+            relic_bonus_pct += 0.15
+            self.first_ally_attack_used = True
+        if target.hp >= target.max_hp * 0.5 and self._has_relic("warrior_insignia"):
+            relic_bonus_pct += 0.10
+        if target.hp <= target.max_hp * 0.5 and self._has_relic("hunter_insignia"):
+            relic_bonus_pct += 0.10
+        damage = hero.attack * card.power * multiplier * (1 + relic_bonus_pct) * weak_scale * stack_scale
+        target_was_alive = target.alive
         dealt = target.receive_hit(damage)
         self._record_attack_effect(hero, target, quality)
         hero.make_discard(card)
@@ -289,6 +422,15 @@ class Battle:
         self._note(f"{hero.name} · {card.name} · {quality} · {dealt} 피해 → {target.name}")
         if not target.alive:
             self._note(f"{target.name} 처치")
+            if (
+                target_was_alive
+                and self._has_relic("clockwork")
+                and not self.first_enemy_kill_extra_used
+            ):
+                self.first_enemy_kill_extra_used = True
+                self._queue_extra_action(hero)
+        if quality == "PERFECT" and self._has_relic("gale_compass"):
+            self.pending_speed_bonus_ids.add(hero.unit_id)
         self.phase = "result"
         self.result_after = "actor"
         self.result_until = time.monotonic() + 0.9
@@ -300,14 +442,20 @@ class Battle:
         weak = source.statuses.consume("weak")
         weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
         if quality == "MISS":
-            damage = target.receive_hit(source.attack * skill.power * weak_scale)
+            damage = self._receive_hit(target, source.attack * skill.power * weak_scale)
             self._note(f"방어 실패 · {target.name}이 {damage} 피해를 받았습니다.")
         elif quality == "PERFECT" and target.unit_id == "B":
             damage = 0
             self._note("B · PERFECT 회피로 피해를 받지 않았습니다.")
         else:
-            damage = target.receive_hit(source.attack * skill.power * weak_scale * 0.5)
+            damage = self._receive_hit(target, source.attack * skill.power * weak_scale * 0.5)
             self._note(f"방어 성공 · {target.name}이 피해를 절반으로 줄였습니다.")
+        if quality == "PERFECT" and self._has_relic("focus_crystal"):
+            self.next_attack_bonus_pct[target.unit_id] = self.next_attack_bonus_pct.get(target.unit_id, 0.0) + 0.10
+            self._note(f"집중의 수정 · {target.name}의 다음 공격 피해량이 증가합니다.")
+        if quality == "PERFECT" and damage and self._has_relic("counter_bell") and source.alive:
+            reflected = source.receive_hit(damage * 0.3)
+            self._note(f"반격의 종 · {source.name}에게 {reflected} 피해를 반사했습니다.")
         if damage:
             self._record_attack_effect(source, target, quality)
         if damage and quality == "MISS" and skill.status_key and target.alive:
@@ -363,5 +511,11 @@ class Battle:
             self._prepare_actor()
 
     def reset(self) -> None:
-        self.__init__(self.character_ids, self.encounter_id, self.deck_templates)
+        self.__init__(
+            self.character_ids,
+            self.encounter_id,
+            self.deck_templates,
+            self.relic_ids,
+            self.party,
+        )
 

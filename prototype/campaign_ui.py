@@ -5,8 +5,10 @@ from __future__ import annotations
 import textwrap
 
 from campaign import FloorOne
+from campaign_economy import ShopOffer
 from cards import PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
-from units import character_info
+from relics import MAX_RELICS, RELIC_BY_ID
+from units import PlayerCharacter, character_info
 from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH
 
 import pico2d as p2d
@@ -23,6 +25,13 @@ class CampaignScreen(BattleScreen):
         self.deck_preview_character_id: str | None = None
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
         self.reward_choice_rects: list[tuple[int, int, int, int]] = []
+        self.shop_offer_rects: list[tuple[int, int, int, int]] = []
+        self.shop_reroll_rect = (860, 112, 1090, 184)
+        self.shop_leave_rect = (1120, 112, 1350, 184)
+        self.level_up_stat_rects: dict[str, tuple[int, int, int, int]] = {}
+        self.level_up_spin_rect = (560, 250, 880, 330)
+        self.relic_replace_rects: list[tuple[int, int, int, int]] = []
+        self.relic_replace_cancel_rect = (580, 155, 860, 220)
         self.map_restart_rect = (50, 868, 202, 910)
         self.complete_rect = (540, 245, 900, 330)
 
@@ -71,16 +80,23 @@ class CampaignScreen(BattleScreen):
         floor_map: FloorOne,
         character_id: str,
         notice: str = "",
-        deck_cards: list[SkillCard] | None = None,
+        decks: dict[str, list[SkillCard]] | None = None,
+        coins: int = 0,
+        party: list[PlayerCharacter] | None = None,
+        relic_ids: list[str] | None = None,
     ) -> None:
         self._clear_page()
         self.map_node_rects.clear()
         self.map_character_rects.clear()
         self.text(875, 905, "1층 · 잿빛 회랑", 28, TEXT, centered=True)
+        self.text(353, 905, f"코인 {coins}", 17, GOLD)
+        if relic_ids:
+            relic_names = " · ".join(RELIC_BY_ID[relic_id].name for relic_id in relic_ids[:5])
+            self.text(353, 878, f"유물: {relic_names}", 12, MINT)
         self.panel(self.map_restart_rect[0], self.map_restart_rect[1], self.map_restart_rect[2] - self.map_restart_rect[0], self.map_restart_rect[3] - self.map_restart_rect[1], PANEL_LIGHT, LINE)
         self.text((self.map_restart_rect[0] + self.map_restart_rect[2]) / 2, 889, "처음으로", 13, MUTED, centered=True)
 
-        self._draw_route_panel(character_id)
+        self._draw_route_panel(character_id, party)
         for source_id, target_id in floor_map.edges:
             source = floor_map.nodes[source_id]
             target = floor_map.nodes[target_id]
@@ -94,25 +110,37 @@ class CampaignScreen(BattleScreen):
             self.panel(510, 842, 730, 38, (50, 45, 39), GOLD)
             self.text(875, 861, notice[:62], 13, GOLD, centered=True)
         if self.deck_preview_character_id:
-            self._draw_deck_preview(self.deck_preview_character_id, deck_cards)
+            self._draw_deck_preview(
+                self.deck_preview_character_id,
+                decks.get(self.deck_preview_character_id) if decks else None,
+            )
         p2d.update_canvas()
 
-    def _draw_route_panel(self, character_id: str) -> None:
+    def _draw_route_panel(
+        self, character_id: str, party: list[PlayerCharacter] | None = None
+    ) -> None:
         self.panel(34, 215, 286, 620, PANEL)
-        self.text(177, 803, "동행자  1 / 4", 17, GOLD, centered=True)
+        party = party or []
+        party_ids = [hero.unit_id for hero in party] if party else [character_id]
+        self.text(177, 803, f"동행자  {len(party_ids)} / 4", 17, GOLD, centered=True)
         self.text(177, 780, "캐릭터를 클릭하면 덱을 확인합니다", 11, MUTED, centered=True)
         slot_rects = ((48, 644, 306, 750), (48, 524, 306, 630), (48, 404, 306, 510), (48, 284, 306, 390))
-        party_ids = [character_id]
         for index, rect in enumerate(slot_rects):
             member_id = party_ids[index] if index < len(party_ids) else None
             if member_id:
+                hero = party[index] if party else None
                 data = character_info(member_id)
                 self.map_character_rects[member_id] = rect
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL_LIGHT, data["accent"])
                 self.image(self.portraits[member_id], rect[0] + 43, rect[1] + 54, 54, 81)
-                self.text(rect[0] + 84, rect[1] + 78, data["name"], 14, data["accent"])
-                self.text(rect[0] + 84, rect[1] + 56, f"HP {data['hp']}  ·  ATK {data['attack']}", 11, TEXT)
-                self.text(rect[0] + 84, rect[1] + 38, f"SPD {data['speed']}", 10, MUTED)
+                name = hero.name if hero else data["name"]
+                hp_text = f"HP {hero.hp}/{hero.max_hp}" if hero else f"HP {data['hp']}"
+                attack = hero.attack if hero else data["attack"]
+                speed = hero.speed if hero else data["speed"]
+                level = hero.level if hero else 1
+                self.text(rect[0] + 84, rect[1] + 78, f"{name} · Lv.{level}", 13, data["accent"])
+                self.text(rect[0] + 84, rect[1] + 56, f"{hp_text}  ·  ATK {attack}", 11, TEXT)
+                self.text(rect[0] + 84, rect[1] + 38, f"SPD {speed}", 10, MUTED)
                 self.text(rect[0] + 84, rect[1] + 17, "클릭하여 덱 보기", 10, GOLD)
             else:
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL, LINE)
@@ -145,7 +173,7 @@ class CampaignScreen(BattleScreen):
         if node.kind == "start":
             status = "시작"
         elif node.kind == "shop":
-            status = "상점 · 구매 기능 미구현" if state != "locked" else "잠김"
+            status = "상품 구매" if state == "available" else "완료" if state == "cleared" else "잠김"
         else:
             kind_label = {"battle": "전투", "elite": "정예", "boss": "층 보스"}[node.kind]
             status_label = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
@@ -197,12 +225,14 @@ class CampaignScreen(BattleScreen):
         character_id: str,
         reward_options: list[tuple[str, SkillCard]],
         cursor: int,
+        coins: int = 0,
     ) -> None:
         self._clear_page()
         self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self.panel(110, 140, 1220, 680, (18, 24, 37), GOLD)
         data = character_info(character_id)
         self.text(720, 777, "전투 승리 · 스킬 보상", 29, GOLD, centered=True)
+        self.text(1180, 777, f"코인 {coins}", 16, GOLD, centered=True)
         self.text(720, 738, f"{data['name']}의 덱에 추가할 적 스킬을 선택하세요", 16, TEXT, centered=True)
         self.reward_choice_rects.clear()
         if not reward_options:
@@ -244,11 +274,167 @@ class CampaignScreen(BattleScreen):
                 return index
         return None
 
-    def draw_floor_complete(self) -> None:
+    def draw_shop(
+        self,
+        coins: int,
+        offers: list[ShopOffer],
+        party: list[PlayerCharacter],
+        relic_ids: list[str],
+        reroll_cost: int,
+        notice: str = "",
+    ) -> None:
+        self._clear_page()
+        self.text(720, 900, "떠돌이 상점", 32, GOLD, centered=True)
+        self.text(1295, 900, f"보유 코인  {coins}", 18, GOLD, centered=True)
+        self.text(720, 855, f"동행자 {len(party)}/4   ·   유물 {len(relic_ids)}/{MAX_RELICS}", 15, MUTED, centered=True)
+        self.panel(80, 246, 1280, 550, PANEL, LINE)
+        self.shop_offer_rects.clear()
+        centers = (320, 720, 1120)
+        category_names = {"recruit": "영입", "upgrade": "강화", "relic": "유물"}
+        accents = {"recruit": BLUE, "upgrade": MINT, "relic": GOLD}
+        for index, offer in enumerate(offers):
+            center_x = centers[index]
+            rect = (center_x - 175, 310, center_x + 175, 755)
+            border = accents[offer.category] if offer.available and not offer.sold else LINE
+            fill = PANEL_LIGHT if offer.available and not offer.sold else (24, 29, 41)
+            self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], fill, border)
+            self.text(center_x, 710, category_names[offer.category], 17, accents[offer.category], centered=True)
+            self.text(center_x, 655, offer.title, 20, TEXT if offer.available else MUTED, centered=True)
+            lines = textwrap.wrap(offer.description, width=22)[:4] or [offer.description]
+            for line_index, line in enumerate(lines):
+                self.text(center_x, 575 - line_index * 26, line, 14, MUTED, centered=True)
+            if offer.sold:
+                self.text(center_x, 430, "구매 완료", 19, MINT, centered=True)
+                self.shop_offer_rects.append((0, 0, 0, 0))
+            elif offer.available:
+                self.text(center_x, 405, f"가격  {offer.price} 코인", 17, GOLD, centered=True)
+                button = (center_x - 124, 326, center_x + 124, 378)
+                self.panel(*button[:2], button[2] - button[0], button[3] - button[1], (52, 48, 42), GOLD)
+                self.text(center_x, 343, "구매", 17, GOLD, centered=True)
+                self.shop_offer_rects.append(button)
+            else:
+                self.text(center_x, 405, "구매할 수 없음", 16, MUTED, centered=True)
+                self.shop_offer_rects.append((0, 0, 0, 0))
+
+        self.panel(*self.shop_reroll_rect[:2], self.shop_reroll_rect[2] - self.shop_reroll_rect[0], self.shop_reroll_rect[3] - self.shop_reroll_rect[1], PANEL_LIGHT, LINE)
+        self.text(
+            (self.shop_reroll_rect[0] + self.shop_reroll_rect[2]) / 2,
+            140,
+            f"상품 재배치 · {reroll_cost} 코인",
+            15,
+            GOLD,
+            centered=True,
+        )
+        self.panel(*self.shop_leave_rect[:2], self.shop_leave_rect[2] - self.shop_leave_rect[0], self.shop_leave_rect[3] - self.shop_leave_rect[1], (52, 48, 42), GOLD)
+        self.text(
+            (self.shop_leave_rect[0] + self.shop_leave_rect[2]) / 2,
+            140,
+            "상점 나가기",
+            16,
+            GOLD,
+            centered=True,
+        )
+        relic_names = " · ".join(RELIC_BY_ID[relic_id].name for relic_id in relic_ids) or "없음"
+        self.text(720, 214, f"보유 유물: {relic_names}", 12, MINT, centered=True)
+        self.text(720, 94, notice or "상품은 각 분류에서 하나씩 무작위로 제시됩니다.", 13, MUTED if not notice else GOLD, centered=True)
+        p2d.update_canvas()
+
+    def draw_level_up(
+        self,
+        hero: PlayerCharacter,
+        selected_stat: str | None,
+        spinning: bool,
+        number: int,
+        roll_range: tuple[int, int],
+        coins: int,
+    ) -> None:
+        self._clear_page()
+        self.panel(215, 192, 1010, 610, (20, 27, 41), GOLD)
+        self.text(720, 748, f"{hero.name} · 레벨 강화", 28, GOLD, centered=True)
+        self.text(720, 706, f"Lv.{hero.level} → Lv.{hero.level + 1}  ·  전체 스탯 +10%p", 17, TEXT, centered=True)
+        self.text(720, 672, f"코인 {coins}  ·  추가 강화 수치 {roll_range[0]}~{roll_range[1]} 룰렛", 14, MUTED, centered=True)
+        stat_labels = {"hp": "최대 체력", "attack": "공격력", "speed": "속도"}
+        self.level_up_stat_rects.clear()
+        for stat, center_x in (("hp", 405), ("attack", 720), ("speed", 1035)):
+            rect = (center_x - 130, 450, center_x + 130, 580)
+            self.level_up_stat_rects[stat] = rect
+            selected = stat == selected_stat
+            self.panel(
+                rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1],
+                (52, 48, 42) if selected else PANEL_LIGHT,
+                GOLD if selected else LINE,
+            )
+            value = hero.max_hp if stat == "hp" else hero.attack if stat == "attack" else hero.speed
+            self.text(center_x, 530, stat_labels[stat], 18, GOLD if selected else TEXT, centered=True)
+            self.text(center_x, 492, f"현재 {value}", 14, MUTED, centered=True)
+        spinning_label = f"룰렛  {number}" if spinning else "룰렛 시작"
+        self.panel(*self.level_up_spin_rect[:2], self.level_up_spin_rect[2] - self.level_up_spin_rect[0], self.level_up_spin_rect[3] - self.level_up_spin_rect[1], (52, 48, 42), GOLD)
+        self.text(720, 279, spinning_label, 20, GOLD if selected_stat else MUTED, centered=True)
+        instruction = "SPACE를 눌러 룰렛을 멈추세요" if spinning else "스탯을 선택한 뒤 룰렛을 시작하세요"
+        self.text(720, 228, instruction, 14, MUTED, centered=True)
+        p2d.update_canvas()
+
+    def draw_relic_replacement(
+        self, relic_ids: list[str], new_relic_id: str, coins: int, price: int
+    ) -> None:
+        self._clear_page()
+        relic = RELIC_BY_ID[new_relic_id]
+        self.panel(170, 185, 1100, 625, (20, 27, 41), GOLD)
+        self.text(720, 745, f"유물 보관 한도 · {relic.name} 획득", 27, GOLD, centered=True)
+        self.text(720, 701, f"보유 한도에 도달했습니다. 교체할 유물을 선택하세요.  ·  {price} 코인", 15, TEXT, centered=True)
+        self.relic_replace_rects.clear()
+        centers = (360, 720, 1080)
+        for index, relic_id in enumerate(relic_ids):
+            center_x = centers[index % len(centers)]
+            row = index // len(centers)
+            bottom = 390 if row == 0 else 260
+            rect = (center_x - 150, bottom, center_x + 150, bottom + 100)
+            self.relic_replace_rects.append(rect)
+            old_relic = RELIC_BY_ID[relic_id]
+            self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL_LIGHT, LINE)
+            self.text(center_x, bottom + 66, old_relic.name, 17, TEXT, centered=True)
+            self.text(center_x, bottom + 34, textwrap.shorten(old_relic.description, width=28), 11, MUTED, centered=True)
+        self.panel(*self.relic_replace_cancel_rect[:2], self.relic_replace_cancel_rect[2] - self.relic_replace_cancel_rect[0], self.relic_replace_cancel_rect[3] - self.relic_replace_cancel_rect[1], PANEL_LIGHT, LINE)
+        self.text(720, 176, "취소", 15, MUTED, centered=True)
+        self.text(720, 110, f"보유 코인 {coins}", 14, GOLD, centered=True)
+        p2d.update_canvas()
+
+    def shop_offer_at(self, x: int, y: int) -> int | None:
+        for index, rect in enumerate(self.shop_offer_rects):
+            if rect != (0, 0, 0, 0) and self._inside(x, y, rect):
+                return index
+        return None
+
+    def shop_reroll_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.shop_reroll_rect)
+
+    def shop_leave_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.shop_leave_rect)
+
+    def level_up_stat_at(self, x: int, y: int) -> str | None:
+        for stat, rect in self.level_up_stat_rects.items():
+            if self._inside(x, y, rect):
+                return stat
+        return None
+
+    def level_up_spin_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.level_up_spin_rect)
+
+    def relic_replace_at(self, x: int, y: int) -> int | None:
+        for index, rect in enumerate(self.relic_replace_rects):
+            if self._inside(x, y, rect):
+                return index
+        return None
+
+    def relic_replace_cancel_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.relic_replace_cancel_rect)
+
+    def draw_floor_complete(self, coins: int = 0) -> None:
         self._clear_page()
         self.circle(720, 565, 190, (47, 43, 38), filled=True)
         self.text(720, 620, "1층 클리어", 38, GOLD, centered=True)
         self.text(720, 558, "현재 플레이 가능한 맵은 1층까지입니다.", 17, TEXT, centered=True)
+        self.text(720, 518, f"보유 코인 {coins}", 15, GOLD, centered=True)
         self.panel(self.complete_rect[0], self.complete_rect[1], self.complete_rect[2] - self.complete_rect[0], self.complete_rect[3] - self.complete_rect[1], (52, 48, 42), GOLD)
         self.text(720, 278, "타이틀로", 20, GOLD, centered=True)
         p2d.update_canvas()

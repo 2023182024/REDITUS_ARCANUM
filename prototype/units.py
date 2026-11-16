@@ -56,6 +56,48 @@ class PlayerCharacter(Combatant):
     hand: list[SkillCard] = field(default_factory=list)
     discard: list[SkillCard] = field(default_factory=list)
     perfect_stacks: int = 0
+    level: int = 1
+    level_bonus_pct: int = 0
+    base_max_hp: int = 0
+    base_attack: int = 0
+    base_speed: int = 0
+    bonus_max_hp: int = 0
+    bonus_attack: int = 0
+    bonus_speed: int = 0
+    last_level_up_stat: str | None = None
+    same_stat_levelups: int = 0
+
+    def __post_init__(self) -> None:
+        self.base_max_hp = self.base_max_hp or self.max_hp
+        self.base_attack = self.base_attack or self.attack
+        self.base_speed = self.base_speed or self.speed
+
+    def level_up(self, stat: str, roll: int) -> None:
+        old_max_hp = self.max_hp
+        self.level += 1
+        self.level_bonus_pct += 10
+        if stat == "hp":
+            self.bonus_max_hp += roll
+        elif stat == "attack":
+            self.bonus_attack += roll
+        elif stat == "speed":
+            self.bonus_speed += roll
+
+        if stat == self.last_level_up_stat:
+            self.same_stat_levelups += 1
+        else:
+            self.last_level_up_stat = stat
+            self.same_stat_levelups = 1
+
+        factor = 1 + self.level_bonus_pct / 100
+        self.max_hp = round(self.base_max_hp * factor + self.bonus_max_hp)
+        self.attack = round(self.base_attack * factor + self.bonus_attack)
+        self.speed = round(self.base_speed * factor + self.bonus_speed)
+        self.hp = min(self.max_hp, self.hp + self.max_hp - old_max_hp)
+
+    def level_up_roll_range(self, stat: str) -> tuple[int, int]:
+        narrowing = self.same_stat_levelups if stat == self.last_level_up_stat else 0
+        return min(5, 1 + narrowing), max(5, 9 - narrowing)
 
     def draw(self, count: int) -> int:
         drawn = 0
