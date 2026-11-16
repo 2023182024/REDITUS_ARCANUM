@@ -9,7 +9,7 @@ from campaign_economy import ShopOffer
 from cards import PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import PlayerCharacter, character_info
-from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE
+from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE, CORAL
 
 import pico2d as p2d
 
@@ -25,6 +25,7 @@ class CampaignScreen(BattleScreen):
         self.deck_preview_character_id: str | None = None
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
         self.reward_choice_rects: list[tuple[int, int, int, int]] = []
+        self.reward_character_rects: list[tuple[int, int, int, int]] = []
         self.shop_offer_rects: list[tuple[int, int, int, int]] = []
         self.shop_reroll_rect = (860, 112, 1090, 184)
         self.shop_leave_rect = (1120, 112, 1350, 184)
@@ -233,7 +234,7 @@ class CampaignScreen(BattleScreen):
         data = character_info(character_id)
         self.text(720, 777, "전투 승리 · 스킬 보상", 29, GOLD, centered=True)
         self.text(1180, 777, f"코인 {coins}", 16, GOLD, centered=True)
-        self.text(720, 738, f"{data['name']}의 덱에 추가할 적 스킬을 선택하세요", 16, TEXT, centered=True)
+        self.text(720, 738, "추가할 적 스킬을 선택하세요", 16, TEXT, centered=True)
         self.reward_choice_rects.clear()
         if not reward_options:
             self.text(720, 475, "선택할 스킬이 없습니다.", 18, MUTED, centered=True)
@@ -270,6 +271,104 @@ class CampaignScreen(BattleScreen):
 
     def reward_choice_at(self, x: int, y: int) -> int | None:
         for index, rect in enumerate(self.reward_choice_rects):
+            if self._inside(x, y, rect):
+                return index
+        return None
+
+    def draw_reward_character_choice(
+        self,
+        card: SkillCard,
+        source_name: str,
+        party: list[PlayerCharacter],
+        cursor: int,
+        coins: int = 0,
+    ) -> None:
+        self._clear_page()
+        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        self.panel(110, 140, 1220, 680, (18, 24, 37), GOLD)
+        self.text(720, 777, "전투 승리 · 카드 추가 대상", 29, GOLD, centered=True)
+        self.text(1180, 777, f"코인 {coins}", 16, GOLD, centered=True)
+        self.text(720, 738, "선택한 스킬을 추가할 캐릭터를 고르세요", 16, TEXT, centered=True)
+
+        preview_rect = (150, 245, 500, 700)
+        self.panel(
+            preview_rect[0],
+            preview_rect[1],
+            preview_rect[2] - preview_rect[0],
+            preview_rect[3] - preview_rect[1],
+            PANEL,
+            LINE,
+        )
+        self.text(325, 665, f"{source_name}에게서 획득", 15, CORAL, centered=True)
+        card_width = 178
+        card_height = round(card_width * 188 / 140)
+        card_x, card_y = 236, 359
+        center_x = card_x + card_width / 2
+        center_y = card_y + card_height / 2
+        content_scale = card_height / 188
+        self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
+        self.text(
+            center_x,
+            card_y + card_height - 22 * content_scale,
+            card.name,
+            round(13 * content_scale),
+            CORAL,
+            centered=True,
+        )
+        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+        description_y = card_y + (58 if len(description_lines) > 1 else 51) * content_scale
+        for line_index, line in enumerate(description_lines):
+            self.text(
+                center_x,
+                description_y - line_index * 14 * content_scale,
+                line,
+                round(11 * content_scale),
+                TEXT,
+                centered=True,
+            )
+        effect_color = MINT if card.status_key else MUTED
+        self.text(
+            center_x,
+            card_y + 20 * content_scale,
+            f"×{card.power:.2f} · {card.short_effect()}",
+            round(10 * content_scale),
+            effect_color,
+            centered=True,
+        )
+        self.image(self.card_frames["enemy"], center_x, center_y, card_width, card_height)
+
+        count = len(party)
+        if count == 1:
+            slots = [(740, 350)]
+        elif count == 2:
+            slots = [(555, 440), (935, 440)]
+        elif count == 3:
+            slots = [(555, 440), (935, 440), (740, 205)]
+        else:
+            slots = [(555, 440), (935, 440), (555, 205), (935, 205)]
+        self.reward_character_rects.clear()
+        for index, hero in enumerate(party):
+            slot_x, slot_y = slots[index]
+            rect = (slot_x, slot_y, slot_x + 350, slot_y + 210)
+            self.reward_character_rects.append(rect)
+            hovered = index == cursor
+            edge = GOLD if hovered else hero.accent
+            fill = (48, 45, 40) if hovered else PANEL
+            self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], fill, edge)
+            self.image(self.portraits[hero.unit_id], rect[0] + 78, rect[1] + 112, 74, 111)
+            short_name = hero.name.split(" · ", 1)[0]
+            self.text(rect[0] + 145, rect[1] + 166, short_name, 16, hero.accent)
+            self.text(rect[2] - 16, rect[1] + 166, f"Lv.{hero.level}", 12, MUTED)
+            self.text(rect[0] + 145, rect[1] + 130, f"HP  {hero.hp}/{hero.max_hp}", 13, TEXT)
+            self.text(rect[0] + 145, rect[1] + 105, f"ATK  {hero.attack}", 13, TEXT)
+            self.text(rect[0] + 145, rect[1] + 80, f"SPD  {hero.effective_speed()}", 13, TEXT)
+            self.text(rect[0] + 145, rect[1] + 36, "이 캐릭터의 덱에 추가", 11, GOLD if hovered else MUTED)
+
+        self.text(720, 176, "캐릭터에 커서를 올려 강조 표시 · 클릭하여 덱에 추가", 14, MUTED, centered=True)
+        p2d.update_canvas()
+
+    def reward_character_at(self, x: int, y: int) -> int | None:
+        for index, rect in enumerate(self.reward_character_rects):
             if self._inside(x, y, rect):
                 return index
         return None

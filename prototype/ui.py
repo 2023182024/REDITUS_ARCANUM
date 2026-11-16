@@ -176,6 +176,18 @@ class BattleScreen:
         scale = min(SCALE_X, SCALE_Y)
         image.draw(round(x * SCALE_X), round(y * SCALE_Y), round(w * scale), round(h * scale))
 
+    @staticmethod
+    def image_flipped_horizontally(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
+        scale = min(SCALE_X, SCALE_Y)
+        image.composite_draw(
+            0,
+            "h",
+            round(x * SCALE_X),
+            round(y * SCALE_Y),
+            round(w * scale),
+            round(h * scale),
+        )
+
     def panel(self, x: int, y: int, w: int, h: int, fill: tuple[int, int, int] = PANEL, border: tuple[int, int, int] = LINE) -> None:
         self.rect(x, y, w, h, fill)
         self.rect(x, y, w, h, border, filled=False)
@@ -385,12 +397,22 @@ class BattleScreen:
             self._draw_hero(hero, hero_x, hero_y, battle)
         for enemy, (enemy_x, enemy_y) in zip(battle.enemies, ENEMY_POSITIONS):
             self._draw_enemy(enemy, enemy_x, enemy_y, battle)
+        if battle.active:
+            active_hero = next(
+                (hero for hero in battle.party if hero.unit_id == battle.active.unit_id),
+                None,
+            )
+            if active_hero and self.turn_focus_progress.get(active_hero.unit_id, 0.0) >= 0.82:
+                self._draw_active_hero_stats(active_hero, battle)
         self._draw_attack_effect(battle, now)
 
         if battle.phase == "enemy_skill_reveal":
             self._draw_enemy_skill_reveal(battle, now)
+            self._draw_incoming_target_arrow(battle)
         elif battle.phase in ("attack_timing", "defense_timing"):
             self._draw_timing(battle, now)
+            if battle.phase == "defense_timing":
+                self._draw_incoming_target_arrow(battle)
         elif battle.phase == "result":
             self._draw_result(battle, now)
         elif battle.phase == "victory":
@@ -420,12 +442,7 @@ class BattleScreen:
         active = hero is battle.active
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
-        focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
-        focus_eased = focus_progress * focus_progress * (3.0 - 2.0 * focus_progress)
-        focus_x, focus_y = TURN_FOCUS_CENTER
-        display_x = round(x + (focus_x - x) * focus_eased)
-        display_y = round(y + (focus_y - y) * focus_eased)
-        visual_scale = 1.0 + (TURN_FOCUS_SCALE - 1.0) * focus_eased
+        display_x, display_y, visual_scale = self._hero_visual_position(hero, x, y)
         radius = round(60 * visual_scale)
         self.circle(display_x, display_y, radius, glow, filled=True)
         if hero.alive:
@@ -440,15 +457,65 @@ class BattleScreen:
         else:
             self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
-        info_x = 225
-        self.text(info_x, y + 34, hero.name, 15, border)
-        self._bar(info_x, y + 14, 178, 7, hero.hp / hero.max_hp, hero.accent)
-        self.text(info_x, y - 10, f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}", 11, MUTED)
+        if not active:
+            info_x = 225
+            self.text(info_x, y + 34, hero.name, 15, border)
+            self._bar(info_x, y + 14, 178, 7, hero.hp / hero.max_hp, hero.accent)
+            self.text(info_x, y - 10, f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}", 11, MUTED)
+            effects = hero.statuses.snapshot()[:1]
+            for index, effect in enumerate(effects):
+                self._draw_chip(info_x + 28 + index * 66, y - 28, effect.label, (99, 58, 70))
+            if hero.unit_id == "D" and hero.perfect_stacks:
+                self._draw_chip(info_x + 28 + len(effects) * 66, y - 28, f"P+{hero.perfect_stacks}", (99, 81, 43))
+
+    def _hero_visual_position(
+        self, hero: PlayerCharacter, x: int, y: int
+    ) -> tuple[int, int, float]:
+        focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
+        focus_eased = focus_progress * focus_progress * (3.0 - 2.0 * focus_progress)
+        focus_x, focus_y = TURN_FOCUS_CENTER
+        display_x = round(x + (focus_x - x) * focus_eased)
+        display_y = round(y + (focus_y - y) * focus_eased)
+        visual_scale = 1.0 + (TURN_FOCUS_SCALE - 1.0) * focus_eased
+        return display_x, display_y, visual_scale
+
+    def _draw_active_hero_stats(self, hero: PlayerCharacter, battle: Battle) -> None:
+        hero_index = battle.party.index(hero)
+        base_x, base_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
+        display_x, display_y, visual_scale = self._hero_visual_position(hero, base_x, base_y)
+        portrait_bottom = display_y - 82.5 * visual_scale
+        panel_top = round(portrait_bottom - 12)
+        panel_height = 116
+        panel_width = 300
+        left = display_x - panel_width // 2
+        bottom = panel_top - panel_height
+        self.panel(left, bottom, panel_width, panel_height, (18, 24, 37), hero.accent)
+        self.text(display_x, panel_top - 20, hero.name, 17, hero.accent, centered=True)
+        self._bar(left + 40, panel_top - 45, panel_width - 80, 8, hero.hp / hero.max_hp, hero.accent)
+        self.text(display_x, panel_top - 61, f"HP  {hero.hp} / {hero.max_hp}", 14, TEXT, centered=True)
+        self.text(
+            display_x,
+            panel_top - 82,
+            f"공격력  {hero.attack}     속도  {hero.effective_speed()}",
+            14,
+            MUTED,
+            centered=True,
+        )
         effects = hero.statuses.snapshot()[:1]
-        for index, effect in enumerate(effects):
-            self._draw_chip(info_x + 28 + index * 66, y - 28, effect.label, (99, 58, 70))
+        if effects:
+            self._draw_chip(left + panel_width - 120, bottom + 14, effects[0].label, (99, 58, 70))
         if hero.unit_id == "D" and hero.perfect_stacks:
-            self._draw_chip(info_x + 28 + len(effects) * 66, y - 28, f"P+{hero.perfect_stacks}", (99, 81, 43))
+            self._draw_chip(left + panel_width - 60, bottom + 14, f"P+{hero.perfect_stacks}", (99, 81, 43))
+
+    def _draw_incoming_target_arrow(self, battle: Battle) -> None:
+        target = battle.incoming_target
+        if not target:
+            return
+        hero_index = battle.party.index(target)
+        hero_x, hero_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
+        display_x, display_y, visual_scale = self._hero_visual_position(target, hero_x+150, hero_y)
+        arrow_center_x = round(display_x + 55 * visual_scale + 96)
+        self.image_flipped_horizontally(self.target_arrow, arrow_center_x, display_y, 120, 108)
 
     def _draw_enemy(self, enemy: Enemy, x: int, y: int, battle: Battle) -> None:
         selected_target = enemy.unit_id == self.target_enemy_id and battle.phase == "player" and battle.selected_card

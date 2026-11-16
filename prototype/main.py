@@ -47,6 +47,10 @@ def main() -> None:
         reward_options: list[tuple[str, SkillCard]] = []
         reward_character_id: str | None = None
         reward_cursor = -1
+        reward_stage = "card"
+        reward_character_cursor = -1
+        pending_reward_card: SkillCard | None = None
+        pending_reward_source: str | None = None
         coins = STARTING_COINS
         relic_ids: list[str] = []
         campaign_roster: list[PlayerCharacter] = []
@@ -63,25 +67,25 @@ def main() -> None:
         reward_coins_paid = False
         running = True
 
-        def claim_reward(index: int) -> None:
+        def claim_reward(character_id: str) -> None:
             nonlocal battle, active_node_id, mode, map_notice, map_notice_until
             nonlocal return_to_map_at, reward_options, reward_character_id, reward_cursor
+            nonlocal reward_stage, reward_character_cursor, pending_reward_card, pending_reward_source
             nonlocal campaign_roster
             if (
-                index < 0
-                or index >= len(reward_options)
-                or selected_character_id is None
+                not any(member.unit_id == character_id for member in campaign_roster)
+                or pending_reward_card is None
+                or pending_reward_source is None
                 or active_node_id is None
                 or floor_map is None
             ):
                 return
-            source_name, enemy_skill = reward_options[index]
-            reward_card = player_reward_card(enemy_skill)
-            if selected_character_id not in campaign_decks:
-                campaign_decks[selected_character_id] = starter_deck(selected_character_id)
-            campaign_decks[selected_character_id].append(reward_card)
+            reward_card = pending_reward_card
+            if character_id not in campaign_decks:
+                campaign_decks[character_id] = starter_deck(character_id)
+            campaign_decks[character_id].append(reward_card)
             hero = next(
-                (member for member in campaign_roster if member.unit_id == selected_character_id),
+                (member for member in campaign_roster if member.unit_id == character_id),
                 None,
             )
             if hero:
@@ -92,7 +96,10 @@ def main() -> None:
                 mode = "complete"
             else:
                 mode = "map"
-                map_notice = f"{reward_card.name} 획득 · {source_name}의 스킬, 코인 {last_coin_reward}개"
+                map_notice = (
+                    f"{hero.name if hero else character_id}의 덱에 {reward_card.name} 추가 · "
+                    f"{pending_reward_source}의 스킬, 코인 {last_coin_reward}개"
+                )
                 map_notice_until = time.monotonic() + 4.0
             battle = None
             active_node_id = None
@@ -100,6 +107,10 @@ def main() -> None:
             reward_options = []
             reward_character_id = None
             reward_cursor = -1
+            reward_stage = "card"
+            reward_character_cursor = -1
+            pending_reward_card = None
+            pending_reward_source = None
 
         def leave_shop() -> None:
             nonlocal mode, map_notice, map_notice_until, pending_relic_offer
@@ -181,8 +192,12 @@ def main() -> None:
                     if mode == "battle" and battle:
                         screen.handle_mouse_move(battle, x, y)
                     elif mode == "reward":
-                        hover_index = screen.reward_choice_at(x, y)
-                        reward_cursor = hover_index if hover_index is not None else -1
+                        if reward_stage == "card":
+                            hover_index = screen.reward_choice_at(x, y)
+                            reward_cursor = hover_index if hover_index is not None else -1
+                        else:
+                            hover_index = screen.reward_character_at(x, y)
+                            reward_character_cursor = hover_index if hover_index is not None else -1
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -264,10 +279,20 @@ def main() -> None:
                     elif mode == "battle" and battle:
                         screen.handle_mouse_click(battle, x, y)
                     elif mode == "reward" and reward_options:
-                        choice_index = screen.reward_choice_at(x, y)
-                        if choice_index is not None:
-                            reward_cursor = choice_index
-                            claim_reward(choice_index)
+                        if reward_stage == "card":
+                            choice_index = screen.reward_choice_at(x, y)
+                            if choice_index is not None:
+                                reward_cursor = choice_index
+                                source_name, enemy_skill = reward_options[choice_index]
+                                pending_reward_card = player_reward_card(enemy_skill)
+                                pending_reward_source = source_name
+                                reward_stage = "character"
+                                reward_character_cursor = -1
+                        else:
+                            character_index = screen.reward_character_at(x, y)
+                            if character_index is not None and character_index < len(campaign_roster):
+                                reward_character_cursor = character_index
+                                claim_reward(campaign_roster[character_index].unit_id)
                     elif mode == "shop":
                         if screen.shop_leave_clicked(x, y):
                             leave_shop()
@@ -419,10 +444,23 @@ def main() -> None:
                             for skill in enemy.skills
                         ]
                         reward_cursor = -1
+                        reward_stage = "card"
+                        reward_character_cursor = -1
+                        pending_reward_card = None
+                        pending_reward_source = None
                         mode = "reward"
                         return_to_map_at = None
             elif mode == "reward" and reward_character_id:
-                screen.draw_reward_choice(reward_character_id, reward_options, reward_cursor, coins)
+                if reward_stage == "card":
+                    screen.draw_reward_choice(reward_character_id, reward_options, reward_cursor, coins)
+                elif pending_reward_card and pending_reward_source:
+                    screen.draw_reward_character_choice(
+                        pending_reward_card,
+                        pending_reward_source,
+                        campaign_roster,
+                        reward_character_cursor,
+                        coins,
+                    )
             elif mode == "complete":
                 screen.draw_floor_complete(coins)
             elapsed = time.monotonic() - frame_start
