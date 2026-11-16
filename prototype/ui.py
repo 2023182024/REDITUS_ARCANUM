@@ -368,7 +368,7 @@ class BattleScreen:
             fill = (58, 51, 42) if active else PANEL_LIGHT
             self.panel(x, 804, 164, 45, fill, border)
             color = actor.accent if actor.alive else MUTED
-            label = actor.unit_id if actor.side == "player" else actor.name[:4]
+            label = actor.name.split(" · ", 1)[0] if actor.side == "player" else actor.name[:4]
             self.text(x + 11, 832, label, 14, color)
             self.text(x + 11, 813, f"SPD {actor.effective_speed()}", 12, MUTED)
             self.text(x + 133, 825, f"d{entry.die}", 12, GOLD if active else MUTED, centered=True)
