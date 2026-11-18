@@ -900,10 +900,9 @@ class BattleScreen:
             self.action_cursor = 5
 
     def handle_mouse_click(self, battle: Battle, x: int, y: int) -> None:
-        """Handle mouse selection, targeting, timing, and retry actions."""
+        """Handle mouse selection, targeting, and retry actions."""
         self._sync_focus(battle)
         if battle.phase in ("attack_timing", "defense_timing"):
-            battle.submit_timing()
             return
         if battle.phase == "defeat":
             battle.reset()
