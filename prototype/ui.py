@@ -122,6 +122,7 @@ class BattleScreen:
         self.selected_card_key: tuple[str, int] | None = None
         self.selected_card_motion: CardMotion | None = None
         self.returning_card_motions: dict[tuple[str, int], CardMotion] = {}
+        self.party_display_positions: dict[str, tuple[int, int]] = {}
 
     @staticmethod
     def _find_font() -> str:
@@ -393,7 +394,9 @@ class BattleScreen:
         self.text(48, 753, "전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
 
-        for hero, (hero_x, hero_y) in zip(battle.party, PARTY_POSITIONS):
+        self.party_display_positions = self._party_display_positions(battle)
+        for hero in battle.party:
+            hero_x, hero_y = self.party_display_positions[hero.unit_id]
             self._draw_hero(hero, hero_x, hero_y, battle)
         for enemy, (enemy_x, enemy_y) in zip(battle.enemies, ENEMY_POSITIONS):
             self._draw_enemy(enemy, enemy_x, enemy_y, battle)
@@ -458,15 +461,45 @@ class BattleScreen:
             self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         if not active:
-            info_x = 225
-            self.text(info_x, y + 34, hero.name, 15, border)
-            self._bar(info_x, y + 14, 178, 7, hero.hp / hero.max_hp, hero.accent)
-            self.text(info_x, y - 10, f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}", 11, MUTED)
+            info_x = display_x
+            self.text(info_x, display_y - 100, hero.name, 15, border, centered=True)
+            self._bar(info_x - 89, display_y - 119, 178, 7, hero.hp / hero.max_hp, hero.accent)
+            self.text(
+                info_x,
+                display_y - 139,
+                f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}",
+                11,
+                MUTED,
+                centered=True,
+            )
             effects = hero.statuses.snapshot()[:1]
             for index, effect in enumerate(effects):
-                self._draw_chip(info_x + 28 + index * 66, y - 28, effect.label, (99, 58, 70))
+                self._draw_chip(info_x - 58 + index * 66, display_y - 162, effect.label, (99, 58, 70))
             if hero.unit_id == "D" and hero.perfect_stacks:
-                self._draw_chip(info_x + 28 + len(effects) * 66, y - 28, f"P+{hero.perfect_stacks}", (99, 81, 43))
+                self._draw_chip(
+                    info_x - 58 + len(effects) * 66,
+                    display_y - 162,
+                    f"P+{hero.perfect_stacks}",
+                    (99, 81, 43),
+                )
+
+    def _party_display_positions(self, battle: Battle) -> dict[str, tuple[int, int]]:
+        if battle.active and battle.active.side == "player":
+            active_index = battle.party.index(battle.active)
+            positions = {
+                battle.active.unit_id: PARTY_POSITIONS[min(active_index, len(PARTY_POSITIONS) - 1)]
+            }
+            inactive_slots = iter(((100, 700), (100, 430), (100, 200)))
+            for hero in battle.party:
+                if hero is not battle.active:
+                    positions[hero.unit_id] = next(inactive_slots)
+            return positions
+
+        slots = ((110, 650), (390, 650), (110, 290), (390, 290))
+        return {
+            hero.unit_id: slots[min(index, len(slots) - 1)]
+            for index, hero in enumerate(battle.party)
+        }
 
     def _hero_visual_position(
         self, hero: PlayerCharacter, x: int, y: int
@@ -511,9 +544,11 @@ class BattleScreen:
         target = battle.incoming_target
         if not target:
             return
-        hero_index = battle.party.index(target)
-        hero_x, hero_y = PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)]
-        display_x, display_y, visual_scale = self._hero_visual_position(target, hero_x+150, hero_y)
+        hero_x, hero_y = self.party_display_positions.get(
+            target.unit_id,
+            PARTY_POSITIONS[min(battle.party.index(target), len(PARTY_POSITIONS) - 1)],
+        )
+        display_x, display_y, visual_scale = self._hero_visual_position(target, hero_x, hero_y)
         arrow_center_x = round(display_x + 55 * visual_scale + 96)
         self.image_flipped_horizontally(self.target_arrow, arrow_center_x, display_y, 120, 108)
 
@@ -583,11 +618,14 @@ class BattleScreen:
             self.image(flash, x, y, round(124 * flash_scale), round(124 * flash_scale))
             flash.opacify(1.0)
 
-    @staticmethod
-    def _unit_position(battle: Battle, unit) -> tuple[int, int]:
+    def _unit_position(self, battle: Battle, unit) -> tuple[int, int]:
         if unit.side == "player":
-            index = battle.party.index(unit)
-            return PARTY_POSITIONS[min(index, len(PARTY_POSITIONS) - 1)]
+            base_x, base_y = self.party_display_positions.get(
+                unit.unit_id,
+                PARTY_POSITIONS[min(battle.party.index(unit), len(PARTY_POSITIONS) - 1)],
+            )
+            display_x, display_y, _ = self._hero_visual_position(unit, base_x, base_y)
+            return display_x, display_y
         index = battle.enemies.index(unit)
         return ENEMY_POSITIONS[min(index, len(ENEMY_POSITIONS) - 1)]
 
