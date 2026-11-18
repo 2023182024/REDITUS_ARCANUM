@@ -27,8 +27,9 @@ from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
+    # Use SDL's best available texture scaling filter for downscaled images.
+    p2d.SDL_SetHint(p2d.SDL_HINT_RENDER_SCALE_QUALITY, b"2")
     p2d.open_canvas(WIDTH, HEIGHT)
-    p2d.SDL_SetHint(p2d.SDL_HINT_RENDER_SCALE_QUALITY, b"1")
     try:
         core = p2d.pico2d
         if getattr(core, "window", None) and getattr(core, "SDL_SetWindowTitle", None):
