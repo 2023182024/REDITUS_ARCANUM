@@ -173,6 +173,15 @@ def main() -> None:
             if level_up_spinning and level_up_stat:
                 finish_level_up(roulette_number(now))
 
+        def confirm_level_up_result() -> None:
+            nonlocal level_up_result, mode, shop_notice
+            if not level_up_result or time.monotonic() < level_up_result_confirm_enabled_at:
+                return
+            _, stat_name, roll, _, _ = level_up_result
+            level_up_result = None
+            mode = "shop"
+            shop_notice = f"강화 완료 · {stat_name} +{roll}"
+
         while running:
             frame_start = time.monotonic()
             for event in p2d.get_events():
@@ -209,6 +218,8 @@ def main() -> None:
                         screen.handle_key(battle, event.key)
                     elif mode == "level_up" and event.key == p2d.SDLK_SPACE:
                         stop_level_up(time.monotonic())
+                    elif mode == "level_up_result" and event.key in (p2d.SDLK_RETURN, p2d.SDLK_SPACE):
+                        confirm_level_up_result()
                 elif event.type == p2d.SDL_KEYUP and mode == "battle" and battle:
                     screen.handle_key_up(battle, event.key)
                 elif event.type == p2d.SDL_MOUSEMOTION:
@@ -320,13 +331,9 @@ def main() -> None:
                                 claim_reward(campaign_roster[character_index].unit_id)
                     elif mode == "level_up_result" and level_up_result:
                         if (
-                            time.monotonic() >= level_up_result_confirm_enabled_at
-                            and screen.level_up_result_confirm_clicked(x, y)
+                            screen.level_up_result_confirm_clicked(x, y)
                         ):
-                            _, stat_name, roll, _, _ = level_up_result
-                            level_up_result = None
-                            mode = "shop"
-                            shop_notice = f"강화 완료 · {stat_name} +{roll}"
+                            confirm_level_up_result()
                     elif mode == "shop":
                         if screen.shop_leave_clicked(x, y):
                             leave_shop()
