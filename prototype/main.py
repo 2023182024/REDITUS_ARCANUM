@@ -22,13 +22,13 @@ from cards import SkillCard, player_reward_card, starter_deck
 from campaign_ui import CampaignScreen
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import CHARACTER_DATA, PlayerCharacter, create_party
-from ui import HEIGHT, RENDER_OFFSET_X, RENDER_OFFSET_Y, SCALE_X, SCALE_Y, WIDTH
+from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
 
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    # Linear is the fallback; image textures use SDL_ScaleModeBest individually.
-    p2d.SDL_SetHint(p2d.SDL_HINT_RENDER_SCALE_QUALITY, b"1")
+    # Use SDL's best available texture scaling filter for downscaled images.
+    p2d.SDL_SetHint(p2d.SDL_HINT_RENDER_SCALE_QUALITY, b"2")
     p2d.open_canvas(WIDTH, HEIGHT)
     try:
         core = p2d.pico2d
@@ -188,8 +188,8 @@ def main() -> None:
                     elif mode == "level_up" and event.key == p2d.SDLK_SPACE:
                         stop_level_up(time.monotonic())
                 elif event.type == p2d.SDL_MOUSEMOTION:
-                    x = round((event.x - RENDER_OFFSET_X) / SCALE_X)
-                    y = round((HEIGHT - event.y - RENDER_OFFSET_Y) / SCALE_Y)
+                    x = round(event.x / SCALE_X)
+                    y = round((HEIGHT - event.y) / SCALE_Y)
                     if mode == "battle" and battle:
                         screen.handle_mouse_move(battle, x, y)
                     elif mode == "reward":
@@ -200,8 +200,8 @@ def main() -> None:
                             hover_index = screen.reward_character_at(x, y)
                             reward_character_cursor = hover_index if hover_index is not None else -1
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
-                    x = round((event.x - RENDER_OFFSET_X) / SCALE_X)
-                    y = round((HEIGHT - event.y - RENDER_OFFSET_Y) / SCALE_Y)
+                    x = round(event.x / SCALE_X)
+                    y = round((HEIGHT - event.y) / SCALE_Y)
                     if mode == "title" and screen.title_start_clicked(x, y):
                         offers = random.sample(list(CHARACTER_DATA), 2)
                         selected_character_id = None

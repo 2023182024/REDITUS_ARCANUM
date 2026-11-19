@@ -18,12 +18,8 @@ from units import Enemy, PlayerCharacter
 
 DESIGN_WIDTH, DESIGN_HEIGHT = 1440, 960
 WIDTH, HEIGHT = 1280, 720
-RENDER_SCALE = min(WIDTH / DESIGN_WIDTH, HEIGHT / DESIGN_HEIGHT)
-RENDER_OFFSET_X = (WIDTH - DESIGN_WIDTH * RENDER_SCALE) / 2
-RENDER_OFFSET_Y = (HEIGHT - DESIGN_HEIGHT * RENDER_SCALE) / 2
-SCALE_X = SCALE_Y = RENDER_SCALE
-TEXT_OVERSAMPLE = 2
-MIN_TEXT_SIZE = 16
+SCALE_X = WIDTH / DESIGN_WIDTH
+SCALE_Y = HEIGHT / DESIGN_HEIGHT
 CARD_LAYOUT_SCALE = 1.266
 CARD_W = round(140 * CARD_LAYOUT_SCALE)
 CARD_H = round(188 * CARD_LAYOUT_SCALE)
@@ -79,17 +75,17 @@ class CardMotion:
 class BattleScreen:
     def __init__(self, asset_root: Path) -> None:
         self.asset_root = asset_root
-        self.battle_background = self._load_filtered_image(
+        self.battle_background = p2d.load_image(
             str(asset_root / "images" / "backgrounds" / "floor1_battle_background.png")
         )
-        self.target_arrow = self._load_filtered_image(str(asset_root / "images" / "ui" / "target_arrow.png"))
+        self.target_arrow = p2d.load_image(str(asset_root / "images" / "ui" / "target_arrow.png"))
         self.font_file = self._find_font()
-        self.fonts: dict[int, object] = {}
+        self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
         self.portraits: dict[str, p2d.Image] = {}
         for character_id in "ABCD":
             path = asset_root / "images" / "characters_5x" / f"{character_id}.png"
-            self.portraits[character_id] = self._load_filtered_image(str(path))
+            self.portraits[character_id] = p2d.load_image(str(path))
         effect_files = {
             "A": "A_precision.png",
             "B": "B_twin_slash.png",
@@ -99,16 +95,16 @@ class BattleScreen:
             "perfect": "perfect_flash.png",
         }
         self.attack_effects = {
-            key: self._load_filtered_image(str(asset_root / "images" / "effects" / filename))
+            key: p2d.load_image(str(asset_root / "images" / "effects" / filename))
             for key, filename in effect_files.items()
         }
         self.card_frames = {
-            character_id: self._load_filtered_image(
+            character_id: p2d.load_image(
                 str(asset_root / "images" / "card_frames" / f"reditus_card_frame_{character_id.lower()}.png")
             )
             for character_id in "ABCD"
         }
-        self.card_frames["enemy"] = self._load_filtered_image(
+        self.card_frames["enemy"] = p2d.load_image(
             str(asset_root / "images" / "card_frames" / "reditus_card_frame_enemy.png")
         )
         self.action_cursor = 0
@@ -129,12 +125,6 @@ class BattleScreen:
         self.party_display_positions: dict[str, tuple[int, int]] = {}
 
     @staticmethod
-    def _load_filtered_image(path: str) -> p2d.Image:
-        image = p2d.load_image(path)
-        p2d.SDL_SetTextureScaleMode(image.texture, p2d.SDL_ScaleModeBest)
-        return image
-
-    @staticmethod
     def _find_font() -> str:
         windows = Path(os.environ.get("WINDIR", r"C:\Windows"))
         for name in ("malgun.ttf", "malgunsl.ttf", "arial.ttf"):
@@ -144,15 +134,14 @@ class BattleScreen:
         raise FileNotFoundError("Windows Korean font not found (expected C:\\Windows\\Fonts\\malgun.ttf).")
 
     def _text_image(self, text: str, color: tuple[int, int, int], size: int) -> p2d.Image:
-        display_size = max(MIN_TEXT_SIZE, round(size))
-        raster_size = display_size * TEXT_OVERSAMPLE
-        key = (text, color, display_size)
+        size = max(9, round(size * 0.76))
+        key = (text, color, size)
         image = self.textures.get(key)
         if image:
             return image
-        if raster_size not in self.fonts:
-            self.fonts[raster_size] = p2d.load_font(self.font_file, raster_size)
-        font = self.fonts[raster_size]
+        if size not in self.fonts:
+            self.fonts[size] = p2d.load_font(self.font_file, size)
+        font = self.fonts[size]
         surface = p2d.TTF_RenderUTF8_Blended(font.font, text.encode("utf-8"), p2d.SDL_Color(*color))
         if not surface:
             raise RuntimeError(f"Could not render text: {text}")
@@ -160,79 +149,44 @@ class BattleScreen:
         p2d.SDL_FreeSurface(surface)
         if not texture:
             raise RuntimeError(f"Could not create text texture: {text}")
-        p2d.SDL_SetTextureScaleMode(texture, p2d.SDL_ScaleModeLinear)
         image = p2d.Image(texture)
         self.textures[key] = image
         return image
-
-    @staticmethod
-    def _draw_text_texture(image: p2d.Image, x: float, y: float, scale: float = 1.0) -> None:
-        width = image.w / TEXT_OVERSAMPLE * scale
-        height = image.h / TEXT_OVERSAMPLE * scale
-        image.draw(
-            round((x * RENDER_SCALE) + RENDER_OFFSET_X),
-            round((y * RENDER_SCALE) + RENDER_OFFSET_Y),
-            round(width * RENDER_SCALE),
-            round(height * RENDER_SCALE),
-        )
 
     def text(self, x: float, y: float, value: str, size: int = 16, color: tuple[int, int, int] = TEXT, centered: bool = False) -> None:
         if value == "":
             return
         image = self._text_image(str(value), color, size)
-        display_width = image.w / TEXT_OVERSAMPLE
-        center_x = x if centered else x + display_width / 2
-        self._draw_text_texture(image, center_x, y)
+        center_x = x if centered else x + image.w / 2
+        image.draw(center_x * SCALE_X, y * SCALE_Y, image.w, image.h)
 
     @staticmethod
     def rect(x: int, y: int, w: int, h: int, color: tuple[int, int, int], filled: bool = True) -> None:
-        p2d.draw_rectangle(
-            round(x * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y * RENDER_SCALE + RENDER_OFFSET_Y),
-            round((x + w) * RENDER_SCALE + RENDER_OFFSET_X),
-            round((y + h) * RENDER_SCALE + RENDER_OFFSET_Y),
-            *color,
-            filled=filled,
-        )
+        p2d.draw_rectangle(round(x * SCALE_X), round(y * SCALE_Y), round((x + w) * SCALE_X), round((y + h) * SCALE_Y), *color, filled=filled)
 
     @staticmethod
     def line(x1: int, y1: int, x2: int, y2: int, color: tuple[int, int, int]) -> None:
-        p2d.draw_line(
-            round(x1 * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y1 * RENDER_SCALE + RENDER_OFFSET_Y),
-            round(x2 * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y2 * RENDER_SCALE + RENDER_OFFSET_Y),
-            *color,
-        )
+        p2d.draw_line(round(x1 * SCALE_X), round(y1 * SCALE_Y), round(x2 * SCALE_X), round(y2 * SCALE_Y), *color)
 
     @staticmethod
     def circle(x: int, y: int, radius: int, color: tuple[int, int, int], filled: bool = False) -> None:
-        p2d.draw_circle(
-            round(x * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y * RENDER_SCALE + RENDER_OFFSET_Y),
-            round(radius * RENDER_SCALE),
-            *color,
-            filled=filled,
-        )
+        p2d.draw_circle(round(x * SCALE_X), round(y * SCALE_Y), round(radius * min(SCALE_X, SCALE_Y)), *color, filled=filled)
 
     @staticmethod
     def image(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
-        image.draw(
-            round(x * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y * RENDER_SCALE + RENDER_OFFSET_Y),
-            round(w * RENDER_SCALE),
-            round(h * RENDER_SCALE),
-        )
+        scale = min(SCALE_X, SCALE_Y)
+        image.draw(round(x * SCALE_X), round(y * SCALE_Y), round(w * scale), round(h * scale))
 
     @staticmethod
     def image_flipped_horizontally(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
+        scale = min(SCALE_X, SCALE_Y)
         image.composite_draw(
             0,
             "h",
-            round(x * RENDER_SCALE + RENDER_OFFSET_X),
-            round(y * RENDER_SCALE + RENDER_OFFSET_Y),
-            round(w * RENDER_SCALE),
-            round(h * RENDER_SCALE),
+            round(x * SCALE_X),
+            round(y * SCALE_Y),
+            round(w * scale),
+            round(h * scale),
         )
 
     def panel(self, x: int, y: int, w: int, h: int, fill: tuple[int, int, int] = PANEL, border: tuple[int, int, int] = LINE) -> None:
@@ -779,7 +733,12 @@ class BattleScreen:
 
         result_image = self._text_image(battle.result_quality, battle.result_color, 64)
         result_image.opacify(opacity)
-        self._draw_text_texture(result_image, 720, 480, scale)
+        result_image.draw(
+            round(720 * SCALE_X),
+            round(480 * SCALE_Y),
+            round(result_image.w * scale),
+            round(result_image.h * scale),
+        )
         result_image.opacify(1.0)
 
         units = (*battle.party, *battle.enemies)
@@ -795,7 +754,12 @@ class BattleScreen:
                 30,
             )
             number_image.opacify(opacity)
-            self._draw_text_texture(number_image, x, y + 76 + min(38, elapsed * 45))
+            number_image.draw(
+                round(x * SCALE_X),
+                round((y + 76 + min(38, elapsed * 45)) * SCALE_Y),
+                number_image.w,
+                number_image.h,
+            )
             number_image.opacify(1.0)
 
     def _draw_end_card(self, title: str, message: str, victory: bool) -> None:
