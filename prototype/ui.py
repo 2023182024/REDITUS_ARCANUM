@@ -420,6 +420,8 @@ class BattleScreen:
             self._draw_incoming_target_arrow(battle)
         elif battle.phase in ("attack_timing", "defense_timing", "hold_wait", "hold_timing", "multi_hit_pause"):
             self._draw_timing(battle, now)
+            if battle.phase == "multi_hit_pause":
+                self._draw_result(battle, now)
             if battle.phase == "defense_timing":
                 self._draw_incoming_target_arrow(battle)
         elif battle.phase == "result":
