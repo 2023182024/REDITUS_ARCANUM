@@ -187,6 +187,8 @@ def main() -> None:
                         screen.handle_key(battle, event.key)
                     elif mode == "level_up" and event.key == p2d.SDLK_SPACE:
                         stop_level_up(time.monotonic())
+                elif event.type == p2d.SDL_KEYUP and mode == "battle" and battle:
+                    screen.handle_key_up(battle, event.key)
                 elif event.type == p2d.SDL_MOUSEMOTION:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)

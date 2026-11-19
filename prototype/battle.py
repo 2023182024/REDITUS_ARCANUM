@@ -28,6 +28,13 @@ class AttackEffectState:
 
 class Battle:
     ENEMY_SKILL_REVEAL_DURATION = 1.5
+    MULTI_HIT_GAP = 0.42
+    PLAYER_SPEED_SHIFT = 15
+    FOCUS_TIMING_SPEED_SCALE = 0.75
+    LUMIEL_GUARD_REDUCTION = 0.25
+    VULNERABLE_AMOUNT = 0.25
+    BLEED_AMOUNT = 7
+    BLEED_TURNS = 2
     PERFECT_MULTIPLIER = 1.6
     GOOD_MULTIPLIER = 1.0
     MISS_MULTIPLIER = 0.5
@@ -86,6 +93,16 @@ class Battle:
         self.perfect_window = 0.055
         self.good_window = 0.17
         self.timing_bonus = 0.0
+        self.attack_hit_index = 0
+        self.attack_hit_qualities: list[str] = []
+        self.attack_internal_bonus = 0.0
+        self.attack_weak_scale = 1.0
+        self.attack_base_bonus_pct = 0.0
+        self.attack_timing_speed_scale = 1.0
+        self.next_attack_timing_speed_scale: dict[str, float] = {}
+        self.next_speed_adjustments: dict[str, int] = {}
+        self.guard_reduction_by_id: dict[str, tuple[int, float]] = {}
+        self.multi_hit_next_at = 0.0
         self.result_quality = "GOOD"
         self.result_color = (240, 236, 218)
         self.result_target_id: str | None = None
@@ -170,7 +187,7 @@ class Battle:
         self.roll_by_id = {unit.unit_id: self.rng.randint(1, 6) for unit in actors}
         def order_speed(unit: Combatant) -> int:
             bonus = round(unit.speed * 0.1) if unit.unit_id in self.pending_speed_bonus_ids else 0
-            return unit.effective_speed() + bonus
+            return unit.effective_speed() + bonus + self.next_speed_adjustments.get(unit.unit_id, 0)
 
         actors.sort(key=lambda unit: (-order_speed(unit), -self.roll_by_id[unit.unit_id]))
         self.order = [TurnEntry(unit, self.roll_by_id[unit.unit_id]) for unit in actors]
@@ -195,6 +212,7 @@ class Battle:
                 self.order.insert(hero_index + 1, TurnEntry(hero, self.roll_by_id[hero.unit_id]))
         self.pending_extra_actions.clear()
         self.pending_speed_bonus_ids.clear()
+        self.next_speed_adjustments.clear()
         self.order_index = 0
 
     def _check_battle_end(self) -> bool:
@@ -294,20 +312,46 @@ class Battle:
         hero.hand.remove(card)
         self.selected_card = card
         self.attack_target = target
-        self.timing_start = time.monotonic()
-        self.timing_speed = card.timing_speed
+        now = time.monotonic()
+        self.timing_start = now
+        self.attack_hit_index = 0
+        self.attack_hit_qualities = []
+        self.attack_internal_bonus = 0.0
+        self.attack_weak_scale = 1.0
+        self.attack_base_bonus_pct = self.next_attack_bonus_pct.pop(hero.unit_id, 0.0)
+        self.attack_timing_speed_scale = self.next_attack_timing_speed_scale.pop(hero.unit_id, 1.0)
+        self.timing_speed = card.timing_speed * self.attack_timing_speed_scale
         self.timing_center = 0.5
         bonus = 0.045 if hero.unit_id == "A" else 0
         self.perfect_window = card.perfect_window + bonus
         self.good_window = card.good_window + bonus
         self.timing_bonus = bonus
-        self.phase = "attack_timing"
+        self.phase = "hold_wait" if card.hold_to_judge else "attack_timing"
         if not hero.hand and self._has_relic("cycle_compass") and not self.empty_hand_relic_used:
             self.empty_hand_relic_used = True
             drawn = hero.draw(1)
             if drawn:
                 self._note(f"순환의 나침반 · {hero.name}이 카드 1장을 뽑았습니다.")
-        self._note(f"{hero.name} · {card.name} · SPACE로 타이밍 입력")
+        if card.hold_to_judge:
+            self._note(f"{hero.name} · {card.name} · SPACE를 누르고 있다가 놓아 판정")
+        elif card.hit_count > 1:
+            self._note(f"{hero.name} · {card.name} · {card.hit_count}회 연속 판정")
+        else:
+            self._note(f"{hero.name} · {card.name} · SPACE로 타이밍 입력")
+
+    def start_hold_timing(self, now: float | None = None) -> bool:
+        if self.phase != "hold_wait" or not self.selected_card or not self.selected_card.hold_to_judge:
+            return False
+        self.timing_start = time.monotonic() if now is None else now
+        self.phase = "hold_timing"
+        self._note(f"{self.selected_card.name} · SPACE를 놓으면 판정")
+        return True
+
+    def release_hold_timing(self, now: float | None = None) -> str:
+        if self.phase != "hold_timing":
+            return ""
+        self.phase = "attack_timing"
+        return self.submit_timing(now)
 
     def select_card(self, hero: PlayerCharacter, card: SkillCard) -> None:
         if self.phase != "player" or hero is not self.active or card not in hero.hand:
@@ -356,6 +400,8 @@ class Battle:
         return hero.statuses.has("rest_lock")
 
     def timing_progress(self, now: float | None = None) -> float:
+        if self.phase in ("hold_wait", "multi_hit_pause"):
+            return 0.0
         current = time.monotonic() if now is None else now
         travel = ((current - self.timing_start) * self.timing_speed) % 2
         return travel if travel <= 1 else 2 - travel
@@ -375,7 +421,7 @@ class Battle:
         return quality
 
     def _resolve_timing(self, quality: str) -> None:
-        if self.phase == "attack_timing":
+        if self.phase in ("attack_timing", "hold_timing"):
             self._resolve_player_attack(quality)
         elif self.phase == "defense_timing":
             self._resolve_enemy_attack(quality)
@@ -384,42 +430,103 @@ class Battle:
         hero, card, target = self.active, self.selected_card, self.attack_target
         if not hero or not card or not target:
             return
+        if self.attack_hit_index == 0:
+            weak = hero.statuses.consume("weak")
+            self.attack_weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
+            if (
+                hero.unit_id == self.first_allied_actor_id
+                and not self.first_ally_attack_used
+                and self._has_relic("first_strike_charm")
+            ):
+                self.attack_base_bonus_pct += 0.15
+                self.first_ally_attack_used = True
         multiplier = {
             "MISS": self.MISS_MULTIPLIER,
             "GOOD": self.GOOD_MULTIPLIER,
             "PERFECT": self.PERFECT_MULTIPLIER,
         }[quality]
-        weak = hero.statuses.consume("weak")
-        weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
-        stack_scale = 1 + hero.perfect_stacks * 0.12 if hero.unit_id == "D" else 1.0
-        relic_bonus_pct = self.next_attack_bonus_pct.pop(hero.unit_id, 0.0)
+        stack_rate = 0.12 * (1.5 if card.effect_key == "karmina_karma" else 1.0)
+        stack_scale = 1 + hero.perfect_stacks * stack_rate if hero.unit_id == "D" else 1.0
+        relic_bonus_pct = self.attack_base_bonus_pct
         if quality == "PERFECT" and self._has_relic("precision_clock"):
             relic_bonus_pct += 0.10
-        if (
-            hero.unit_id == self.first_allied_actor_id
-            and not self.first_ally_attack_used
-            and self._has_relic("first_strike_charm")
-        ):
-            relic_bonus_pct += 0.15
-            self.first_ally_attack_used = True
         if target.hp >= target.max_hp * 0.5 and self._has_relic("warrior_insignia"):
             relic_bonus_pct += 0.10
         if target.hp <= target.max_hp * 0.5 and self._has_relic("hunter_insignia"):
             relic_bonus_pct += 0.10
-        damage = hero.attack * card.power * multiplier * (1 + relic_bonus_pct) * weak_scale * stack_scale
+        damage = (
+            hero.attack
+            * card.power
+            * multiplier
+            * (1 + relic_bonus_pct + self.attack_internal_bonus)
+            * self.attack_weak_scale
+            * stack_scale
+        )
         target_was_alive = target.alive
         dealt = target.receive_hit(damage)
         self._record_attack_effect(hero, target, quality)
-        hero.make_discard(card)
+        self.attack_hit_qualities.append(quality)
+
+        if quality in ("GOOD", "PERFECT") and card.status_key and target.alive:
+            target.statuses.apply(card.status_key, card.status_turns, card.status_amount)
+        if card.effect_key == "karmina_twin_slash" and quality in ("GOOD", "PERFECT") and target.alive:
+            bleed = self.BLEED_AMOUNT * (2 if quality == "PERFECT" else 1)
+            target.statuses.apply("bleed", self.BLEED_TURNS, bleed)
+        if card.effect_key == "karmina_assault" and quality == "PERFECT" and target.alive:
+            target.statuses.apply("stun", 1)
+        if card.effect_key == "lumiel_heal" and quality in ("GOOD", "PERFECT"):
+            self._heal_lowest_party_member(round(dealt * 0.40))
+        if card.effect_key == "lumiel_guard":
+            for ally in self.living_party:
+                if ally is not hero:
+                    self.guard_reduction_by_id[ally.unit_id] = (self.round, self.LUMIEL_GUARD_REDUCTION)
+        if card.effect_key == "lumiel_draw" and quality in ("GOOD", "PERFECT"):
+            drawn = hero.draw(1)
+            if drawn:
+                self._note(f"순환의 노래 · {hero.name}이 카드 1장을 뽑았습니다.")
+        if card.effect_key == "neira_triple_assault" and quality in ("GOOD", "PERFECT"):
+            self.attack_internal_bonus += 0.03
+
         if hero.unit_id == "D":
             if quality == "PERFECT":
                 hero.perfect_stacks += 1
             else:
                 hero.perfect_stacks = 0
-        if quality in ("GOOD", "PERFECT") and card.status_key and target.alive:
-            target.statuses.apply(card.status_key, card.status_turns, card.status_amount)
         self._show_result(quality, target, dealt)
-        self._note(f"{hero.name} · {card.name} · {quality} · {dealt} 피해 → {target.name}")
+        self._note(
+            f"{hero.name} · {card.name} {self.attack_hit_index + 1}/{card.hit_count} · "
+            f"{quality} · {dealt} 피해 → {target.name}"
+        )
+
+        if card.effect_key == "neira_spin":
+            if quality == "MISS":
+                self.next_speed_adjustments[hero.unit_id] = -self.PLAYER_SPEED_SHIFT
+                self._note(f"회전 베기 실패 · 다음 순서 속도 -{self.PLAYER_SPEED_SHIFT}")
+            elif quality == "PERFECT":
+                self.next_speed_adjustments[hero.unit_id] = self.PLAYER_SPEED_SHIFT
+                self._note(f"회전 베기 PERFECT · 다음 순서 속도 +{self.PLAYER_SPEED_SHIFT}")
+
+        self.attack_hit_index += 1
+        stop_chain = not target.alive or (card.stop_on_miss and quality == "MISS")
+        has_more_hits = self.attack_hit_index < card.hit_count and not stop_chain
+        if has_more_hits:
+            self.multi_hit_next_at = time.monotonic() + self.MULTI_HIT_GAP
+            self.phase = "multi_hit_pause"
+            return
+
+        if (
+            card.effect_key == "adeline_double_slash"
+            and target.alive
+            and len(self.attack_hit_qualities) == card.hit_count
+            and all(hit_quality == "PERFECT" for hit_quality in self.attack_hit_qualities)
+        ):
+            target.statuses.apply("vulnerable", 1, self.VULNERABLE_AMOUNT, hits=1)
+            self._note(f"{target.name} · 취약 상태가 적용되었습니다.")
+        if card.effect_key == "neira_focus":
+            self.next_attack_timing_speed_scale[hero.unit_id] = self.FOCUS_TIMING_SPEED_SCALE
+            self._note("집중 · 다음 공격의 게이지 속도가 감소합니다.")
+
+        hero.make_discard(card)
         if not target.alive:
             self._note(f"{target.name} 처치")
             if (
@@ -429,11 +536,20 @@ class Battle:
             ):
                 self.first_enemy_kill_extra_used = True
                 self._queue_extra_action(hero)
-        if quality == "PERFECT" and self._has_relic("gale_compass"):
+        if "PERFECT" in self.attack_hit_qualities and self._has_relic("gale_compass"):
             self.pending_speed_bonus_ids.add(hero.unit_id)
         self.phase = "result"
         self.result_after = "actor"
         self.result_until = time.monotonic() + 0.9
+
+    def _heal_lowest_party_member(self, amount: int) -> None:
+        if amount <= 0 or not self.living_party:
+            return
+        target = min(self.living_party, key=lambda member: member.hp)
+        healed = min(amount, target.max_hp - target.hp)
+        if healed > 0:
+            target.hp += healed
+            self._note(f"치유의 파동 · {target.name} 체력 {healed} 회복")
 
     def _resolve_enemy_attack(self, quality: str) -> None:
         source, target, skill = self.incoming_source, self.incoming_target, self.incoming_skill
@@ -441,15 +557,19 @@ class Battle:
             return
         weak = source.statuses.consume("weak")
         weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
+        guard = self.guard_reduction_by_id.get(target.unit_id)
+        guard_scale = 1 - guard[1] if guard and guard[0] == self.round else 1.0
         if quality == "MISS":
-            damage = self._receive_hit(target, source.attack * skill.power * weak_scale)
+            damage = self._receive_hit(target, source.attack * skill.power * weak_scale * guard_scale)
             self._note(f"방어 실패 · {target.name}이 {damage} 피해를 받았습니다.")
         elif quality == "PERFECT" and target.unit_id == "B":
             damage = 0
             self._note("B · PERFECT 회피로 피해를 받지 않았습니다.")
         else:
-            damage = self._receive_hit(target, source.attack * skill.power * weak_scale * 0.5)
+            damage = self._receive_hit(target, source.attack * skill.power * weak_scale * guard_scale * 0.5)
             self._note(f"방어 성공 · {target.name}이 피해를 절반으로 줄였습니다.")
+        if guard_scale < 1 and damage:
+            self._note(f"수호의 타종 · {target.name}이 추가 피해 감소 효과를 받았습니다.")
         if quality == "PERFECT" and self._has_relic("focus_crystal"):
             self.next_attack_bonus_pct[target.unit_id] = self.next_attack_bonus_pct.get(target.unit_id, 0.0) + 0.10
             self._note(f"집중의 수정 · {target.name}의 다음 공격 피해량이 증가합니다.")
@@ -498,7 +618,10 @@ class Battle:
             self.phase = "defense_timing"
             target_name = self.incoming_target.name if self.incoming_target else "아군"
             self._note(f"{target_name} 방어 판정 시작")
-        elif self.phase in ("attack_timing", "defense_timing") and current - self.timing_start > 4.0 / max(0.5, self.timing_speed):
+        elif self.phase == "multi_hit_pause" and current >= self.multi_hit_next_at:
+            self.timing_start = current
+            self.phase = "hold_wait" if self.selected_card and self.selected_card.hold_to_judge else "attack_timing"
+        elif self.phase in ("attack_timing", "defense_timing", "hold_timing") and current - self.timing_start > 4.0 / max(0.5, self.timing_speed):
             self._resolve_timing("MISS")
         elif self.phase == "result" and current >= self.result_until:
             self.active = None

@@ -310,6 +310,11 @@ class BattleScreen:
             started_at=now,
         )
 
+    @staticmethod
+    def _card_power_label(card: SkillCard) -> str:
+        count = f"{card.hit_count}회" if card.hit_count > 1 else "홀드" if card.hold_to_judge else "1회"
+        return f"×{card.power:.2f} · {count} · {card.short_effect()}"
+
     def _draw_skill_card_face(
         self,
         hero: PlayerCharacter,
@@ -352,9 +357,9 @@ class BattleScreen:
         self.text(
             center_x,
             visual_bottom + 20 * content_scale,
-            f"×{card.power:.2f} · {card.short_effect()}",
+            self._card_power_label(card),
             max(9, round(10 * content_scale)),
-            MINT if card.status_key else MUTED,
+            MINT if card.status_key or card.effect_key else MUTED,
             centered=True,
         )
         self.image(self.card_frames[hero.unit_id], center_x, center_y, draw_w, draw_h)
@@ -412,7 +417,7 @@ class BattleScreen:
         if battle.phase == "enemy_skill_reveal":
             self._draw_enemy_skill_reveal(battle, now)
             self._draw_incoming_target_arrow(battle)
-        elif battle.phase in ("attack_timing", "defense_timing"):
+        elif battle.phase in ("attack_timing", "defense_timing", "hold_wait", "hold_timing", "multi_hit_pause"):
             self._draw_timing(battle, now)
             if battle.phase == "defense_timing":
                 self._draw_incoming_target_arrow(battle)
@@ -554,7 +559,10 @@ class BattleScreen:
 
     def _draw_enemy(self, enemy: Enemy, x: int, y: int, battle: Battle) -> None:
         selected_target = enemy.unit_id == self.target_enemy_id and battle.phase == "player" and battle.selected_card
-        target = selected_target or (enemy is battle.attack_target and battle.phase in ("attack_timing", "result"))
+        target = selected_target or (
+            enemy is battle.attack_target
+            and battle.phase in ("attack_timing", "hold_wait", "hold_timing", "multi_hit_pause", "result")
+        )
         target = target or (enemy is battle.incoming_source and battle.phase == "enemy_skill_reveal")
         radius_color = GOLD if target else enemy.accent
         if not enemy.alive:
@@ -709,7 +717,17 @@ class BattleScreen:
             card = battle.selected_card
             target = battle.attack_target.name if battle.attack_target else "적"
             self.text(720, 612, f"{card.name if card else '공격'}  →  {target}", 22, GOLD, centered=True)
-            self.text(720, 580, "정확한 순간에 SPACE", 15, TEXT, centered=True)
+            if battle.phase == "hold_wait":
+                prompt = "SPACE를 누른 뒤, 타이밍에 맞춰 놓으세요"
+            elif battle.phase == "hold_timing":
+                prompt = "SPACE를 놓으면 판정됩니다"
+            elif battle.phase == "multi_hit_pause":
+                prompt = f"다음 타격 준비 · {battle.attack_hit_index + 1}/{card.hit_count}"
+            elif card and card.hit_count > 1:
+                prompt = f"타격 {battle.attack_hit_index + 1}/{card.hit_count} · SPACE로 판정"
+            else:
+                prompt = "정확한 순간에 SPACE"
+            self.text(720, 580, prompt, 15, TEXT, centered=True)
         self._timing_gauge(battle, now)
         self.text(720, 478, "GOOD", 12, MUTED, centered=True)
 
@@ -880,9 +898,9 @@ class BattleScreen:
                 self.text(
                     center_x,
                     visual_bottom + 20 * content_scale,
-                    f"×{card.power:.2f} · {card.short_effect()}",
+                    self._card_power_label(card),
                     max(9, round(10 * content_scale)),
-                    MINT if card.status_key else MUTED,
+                    MINT if card.status_key or card.effect_key else MUTED,
                     centered=True,
                 )
 
@@ -940,7 +958,7 @@ class BattleScreen:
     def handle_mouse_click(self, battle: Battle, x: int, y: int) -> None:
         """Handle mouse selection, targeting, and retry actions."""
         self._sync_focus(battle)
-        if battle.phase in ("attack_timing", "defense_timing"):
+        if battle.phase in ("attack_timing", "defense_timing", "hold_wait", "hold_timing", "multi_hit_pause"):
             return
         if battle.phase == "defeat":
             battle.reset()
@@ -1046,7 +1064,9 @@ class BattleScreen:
         if battle.phase == "player" and battle.active and not battle.selected_card and not self._card_animation_complete(battle):
             return
         if key == p2d.SDLK_SPACE:
-            if battle.phase in ("attack_timing", "defense_timing"):
+            if battle.phase == "hold_wait":
+                battle.start_hold_timing()
+            elif battle.phase in ("attack_timing", "defense_timing"):
                 battle.submit_timing()
             elif battle.phase == "defeat":
                 battle.reset()
@@ -1101,6 +1121,10 @@ class BattleScreen:
             candidates = [i for i in action_indices if (coordinates[i][1] - row) * direction > 0]
             if candidates:
                 self.action_cursor = min(candidates, key=lambda i: (abs(coordinates[i][1] - row), abs(coordinates[i][0] - col)))
+
+    def handle_key_up(self, battle: Battle, key: int) -> None:
+        if key == p2d.SDLK_SPACE:
+            battle.release_hold_timing()
 
     def _card_pointer_rect(
         self, index: int, x: int, y: int, *, include_hover: bool

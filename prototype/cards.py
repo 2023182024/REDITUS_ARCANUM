@@ -19,6 +19,10 @@ class SkillCard:
     status_key: str | None = None
     status_amount: float = 0
     status_turns: int = 1
+    hit_count: int = 1
+    stop_on_miss: bool = False
+    hold_to_judge: bool = False
+    effect_key: str | None = None
 
     def short_effect(self) -> str:
         if self.status_key:
@@ -30,36 +34,63 @@ class SkillCard:
                 "vulnerable": "취약",
                 "rest_lock": "강박",
             }[self.status_key]
+        if self.effect_key:
+            return {
+                "adeline_double_slash": "연격",
+                "neira_spin": "속도",
+                "neira_focus": "홀드",
+                "neira_triple_assault": "연격",
+                "lumiel_heal": "회복",
+                "lumiel_guard": "보호",
+                "lumiel_draw": "드로우",
+                "karmina_twin_slash": "출혈",
+                "karmina_assault": "기절",
+                "karmina_karma": "중첩 강화",
+            }.get(self.effect_key, "공격")
         return "공격"
 
 
 def starter_deck(character_id: str) -> list[SkillCard]:
     """Each 5-card deck shares one basic strike and four thematic skills."""
-    basic = SkillCard("기본 베기", "안정적인 기본 공격", power=1.0, timing_speed=1.15)
+    # card_balance.md damage coefficients are doubled so the global scale
+    # below restores the intended in-combat multipliers exactly once.
+    basic = SkillCard("공격", "기본 공격", power=1.0)
     decks = {
         "A": [
-            SkillCard("정밀 타격", "판정 구간이 넓은 공격", 1.08, 0.88, 0.095, 0.22),
-            SkillCard("견제", "적의 공격을 약화", 0.8, 1.3, status_key="weak", status_amount=0.22),
-            SkillCard("균형 베기", "빠르게 입력하는 공격", 0.92, 1.8, 0.045, 0.14),
-            SkillCard("틈새 찌르기", "적을 둔화", 0.9, 1.0, status_key="slow", status_amount=18, status_turns=2),
+            SkillCard("정밀 타격", "느린 속도 · 약간 좁은 판정", 1.4, 0.8, 0.045, 0.15),
+            SkillCard(
+                "연속 베기", "2회 판정 · 모두 PERFECT면 취약 부여", 0.76, 1.1, 0.045, 0.15,
+                hit_count=2, effect_key="adeline_double_slash",
+            ),
+            SkillCard(
+                "제압", "GOOD 이상이면 적 둔화", 0.9, 1.1, 0.055, 0.17,
+                status_key="slow", status_amount=18, status_turns=2,
+            ),
+            SkillCard("빈틈 찌르기", "홀드형 공격", 1.7, 1.2, 0.035, 0.12, hold_to_judge=True),
         ],
         "B": [
-            SkillCard("급소 찌르기", "적에게 출혈을 부여", 1.08, 1.55, status_key="bleed", status_amount=6, status_turns=2),
-            SkillCard("회전 베기", "연속된 빠른 타격", 0.95, 2.1, 0.05, 0.15),
-            SkillCard("발목 베기", "적의 속도를 낮춤", 0.82, 1.05, status_key="slow", status_amount=20, status_turns=2),
-            SkillCard("집중", "넓은 타이밍 구간", 0.88, 0.72, 0.085, 0.2),
+            SkillCard("급소 찌르기", "높은 피해 · 좁은 판정", 1.5, 1.1, 0.035, 0.12),
+            SkillCard("회전 베기", "MISS면 속도 감소 · PERFECT면 증가", 1.6, 1.2, 0.055, 0.17, effect_key="neira_spin"),
+            SkillCard("집중", "홀드형 공격 · 다음 공격 게이지 감속", 1.2, 1.0, 0.045, 0.15, hold_to_judge=True, effect_key="neira_focus"),
+            SkillCard(
+                "삼연 암습", "3회 판정 · MISS면 연격 중단", 0.6, 1.2, 0.035, 0.12,
+                hit_count=3, stop_on_miss=True, effect_key="neira_triple_assault",
+            ),
         ],
         "C": [
-            SkillCard("노출 마법", "다음 피격 피해 증가", 0.82, 0.9, status_key="vulnerable", status_amount=0.25, status_turns=1),
-            SkillCard("비전 화살", "위력 있는 마법 공격", 1.2, 1.28, 0.045, 0.15),
-            SkillCard("약화 주문", "적의 공격력을 낮춤", 0.75, 1.0, status_key="weak", status_amount=0.25),
-            SkillCard("빙결 파편", "적의 속도를 낮춤", 0.9, 1.4, status_key="slow", status_amount=16, status_turns=2),
+            SkillCard("광휘", "약간 빠른 일반 공격", 1.3, 1.1, 0.055, 0.17),
+            SkillCard("치유의 파동", "가한 피해의 40%만큼 최저 체력 아군 회복", 0.5, 0.9, 0.045, 0.15, effect_key="lumiel_heal"),
+            SkillCard("수호의 타종", "이번 턴 동안 자신 외 아군 피해 감소", 0.6, 1.0, 0.075, 0.21, effect_key="lumiel_guard"),
+            SkillCard("순환의 노래", "GOOD 이상이면 카드 1장 드로우", 0.84, 0.8, 0.055, 0.17, effect_key="lumiel_draw"),
         ],
         "D": [
-            SkillCard("연쇄 베기", "퍼펙트 시 출혈 부여", 1.05, 1.75, 0.045, 0.14, "bleed", 7, 2),
-            SkillCard("제압 공격", "퍼펙트 시 적을 기절", 0.88, 1.2, 0.05, 0.15, "stun", 0, 1),
-            SkillCard("강습", "느리지만 강력한 공격", 1.35, 0.72, 0.035, 0.12),
-            SkillCard("연속 타격", "빠른 연속 공격", 0.92, 2.35, 0.04, 0.13),
+            SkillCard("흐름 베기", "빠르고 넓은 판정", 0.8, 1.1, 0.075, 0.21),
+            SkillCard(
+                "쌍섬", "2회 판정 · GOOD 이상 적중마다 출혈", 0.7, 1.2, 0.055, 0.17,
+                hit_count=2, effect_key="karmina_twin_slash",
+            ),
+            SkillCard("강습", "홀드형 공격 · PERFECT면 기절", 1.32, 1.2, 0.035, 0.12, hold_to_judge=True, effect_key="karmina_assault"),
+            SkillCard("카르마", "이번 공격의 PERFECT 중첩 효과 1.5배", 1.0, 1.1, 0.055, 0.17, effect_key="karmina_karma"),
         ],
     }
     player_cards = [basic, *decks[character_id]]
