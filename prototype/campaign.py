@@ -86,20 +86,18 @@ class FloorTwo:
         ("battle_a", "elite_a"),
         ("battle_a", "battle_b"),
         ("elite_a", "reward_a"),
-        ("battle_b", "reward_a"),
         ("battle_b", "shop_a"),
         ("reward_a", "elite_b"),
         ("shop_a", "elite_b"),
         ("elite_b", "battle_c"),
         ("elite_b", "reward_b"),
-        ("battle_c", "elite_c"),
         ("reward_b", "elite_c"),
+        ("battle_c", "shop_b"),
         ("elite_c", "shop_b"),
         ("shop_b", "boss2"),
     )
     branch_groups = (
         ("elite_a", "battle_b"),
-        ("reward_a", "shop_a"),
         ("battle_c", "reward_b"),
     )
 
@@ -112,8 +110,8 @@ class FloorTwo:
             "battle_b": MapNode("battle_b", "봉인 회랑", "battle", right, 285, ("reward_a", "shop_a"), encounter_id="floor2_battle_b"),
             "reward_a": MapNode("reward_a", "기록 보관함", "reward", left, 355, ("elite_b",)),
             "shop_a": MapNode("shop_a", "기록 상점", "shop", right, 355, ("elite_b",)),
-            "elite_b": MapNode("elite_b", "룬의 방", "elite", right, 425, ("battle_c", "reward_b"), encounter_id="floor2_elite_b"),
-            "battle_c": MapNode("battle_c", "서리 서고", "battle", left, 495, ("elite_c",), encounter_id="floor2_battle_c"),
+            "elite_b": MapNode("elite_b", "룬의 방", "elite", center, 425, ("battle_c", "reward_b"), encounter_id="floor2_elite_b"),
+            "battle_c": MapNode("battle_c", "서리 서고", "battle", left, 495, ("shop_b",), encounter_id="floor2_battle_c"),
             "reward_b": MapNode("reward_b", "봉인 해제", "reward", right, 495, ("elite_c",)),
             "elite_c": MapNode("elite_c", "망각의 방", "elite", right, 565, ("shop_b",), encounter_id="floor2_elite_c"),
             "shop_b": MapNode("shop_b", "마지막 상점", "shop", center, 705, ("boss2",)),
