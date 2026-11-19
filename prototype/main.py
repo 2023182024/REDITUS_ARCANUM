@@ -9,9 +9,9 @@ from pathlib import Path
 import pico2d as p2d
 
 from battle import Battle
-from campaign import FloorOne
+from campaign import FloorOne, FloorTwo
 from campaign_economy import STARTING_COINS, ShopOffer, victory_coins
-from cards import SkillCard, player_reward_card, starter_deck
+from cards import SkillCard, enemy_skills, player_reward_card, starter_deck
 from campaign_ui import CampaignScreen
 from shop import ShopSession
 from units import CHARACTER_DATA, PlayerCharacter, create_party
@@ -31,7 +31,7 @@ def main() -> None:
         mode = "title"
         offers: list[str] = []
         selected_character_id: str | None = None
-        floor_map: FloorOne | None = None
+        floor_map: FloorOne | FloorTwo | None = None
         battle: Battle | None = None
         active_node_id: str | None = None
         return_to_map_at: float | None = None
@@ -85,14 +85,14 @@ def main() -> None:
                 hero.deck.append(reward_card)
             completed_node = active_node_id
             floor_map.complete_node(completed_node)
-            if completed_node == "boss":
+            completed_kind = floor_map.nodes[completed_node].kind
+            if completed_kind == "boss":
                 mode = "complete"
             else:
                 mode = "map"
-                map_notice = (
-                    f"{hero.name if hero else character_id}의 덱에 {reward_card.name} 추가 · "
-                    f"{pending_reward_source}의 스킬, 코인 {last_coin_reward}개"
-                )
+                map_notice = f"{hero.name if hero else character_id}의 덱에 {reward_card.name} 추가 · {pending_reward_source}의 스킬"
+                if completed_kind != "reward":
+                    map_notice += f" · 코인 {last_coin_reward}개"
                 map_notice_until = time.monotonic() + 4.0
             battle = None
             active_node_id = None
@@ -106,13 +106,38 @@ def main() -> None:
             pending_reward_source = None
 
         def leave_shop() -> None:
-            nonlocal mode, map_notice, map_notice_until, pending_relic_offer
-            if floor_map:
-                floor_map.complete_node("shop")
+            nonlocal mode, map_notice, map_notice_until, pending_relic_offer, active_node_id
+            if floor_map and active_node_id:
+                floor_map.complete_node(active_node_id)
             mode = "map"
+            active_node_id = None
             pending_relic_offer = None
             map_notice = "상점 방문을 마쳤습니다."
             map_notice_until = time.monotonic() + 3.0
+
+        def begin_map_reward(node_id: str) -> None:
+            nonlocal mode, active_node_id, reward_options, reward_character_id
+            nonlocal reward_cursor, reward_stage, reward_character_cursor
+            nonlocal pending_reward_card, pending_reward_source
+            nonlocal last_coin_reward
+            if floor_map is None:
+                return
+            active_node_id = node_id
+            reward_options = [
+                (source_name, skill)
+                for source_name, enemy_id in floor_map.reward_sources
+                for skill in enemy_skills(enemy_id)
+            ]
+            random.shuffle(reward_options)
+            reward_options = reward_options[:3]
+            reward_character_id = selected_character_id
+            reward_cursor = -1
+            reward_stage = "card"
+            reward_character_cursor = -1
+            pending_reward_card = None
+            pending_reward_source = None
+            last_coin_reward = 0
+            mode = "reward"
 
         def finish_level_up(roll: int) -> None:
             nonlocal mode, level_up_character_id, level_up_stat, level_up_spinning
@@ -258,17 +283,20 @@ def main() -> None:
                                 screen.toggle_deck_preview(clicked_character)
                             else:
                                 node_id = screen.map_node_at(x, y, floor_map)
-                                if node_id == "shop":
+                                node = floor_map.nodes.get(node_id) if node_id else None
+                                if node and node.kind == "shop":
+                                    active_node_id = node_id
                                     if not campaign_roster:
                                         campaign_roster = create_party([selected_character_id], campaign_decks)
                                     shop.enter(campaign_roster, relic_ids)
                                     pending_relic_offer = None
                                     mode = "shop"
-                                elif node_id and node_id in ("battle_1", "battle_2", "elite", "boss"):
-                                    encounter = {
-                                        "elite": "floor1_elite",
-                                        "boss": "floor1_boss",
-                                    }.get(node_id, "corridor")
+                                elif node and node.kind == "reward":
+                                    if not campaign_roster:
+                                        campaign_roster = create_party([selected_character_id], campaign_decks)
+                                    begin_map_reward(node_id)
+                                elif node and node.kind in ("battle", "elite", "boss"):
+                                    encounter = node.encounter_id or "corridor"
                                     if campaign_roster:
                                         battle = Battle(
                                             encounter_id=encounter,
@@ -289,8 +317,14 @@ def main() -> None:
                                     reward_coins_paid = False
                                     mode = "battle"
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
-                        mode = "title"
-                        selected_character_id = None
+                        if floor_map and floor_map.floor_number == 1:
+                            floor_map = FloorTwo()
+                            mode = "map"
+                            map_notice = "2층 · 망각의 서고에 진입했습니다."
+                            map_notice_until = time.monotonic() + 4.0
+                        else:
+                            mode = "title"
+                            selected_character_id = None
                     elif mode == "battle" and battle:
                         screen.handle_mouse_click(battle, x, y)
                     elif mode == "reward" and reward_options:
@@ -423,8 +457,8 @@ def main() -> None:
                         return_to_map_at = now + 1.1
                         if not reward_coins_paid and active_node_id:
                             encounter_kind = (
-                                "boss" if active_node_id == "boss"
-                                else "elite" if active_node_id == "elite"
+                                floor_map.nodes[active_node_id].kind
+                                if floor_map and active_node_id in floor_map.nodes
                                 else "battle"
                             )
                             last_coin_reward = victory_coins(encounter_kind, relic_ids)
@@ -457,7 +491,7 @@ def main() -> None:
                         coins,
                     )
             elif mode == "complete":
-                screen.draw_floor_complete(coins)
+                screen.draw_floor_complete(coins, floor_map.floor_number if floor_map else 1)
             elapsed = time.monotonic() - frame_start
             if elapsed < 1 / 60:
                 time.sleep(1 / 60 - elapsed)

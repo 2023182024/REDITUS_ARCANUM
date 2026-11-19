@@ -105,6 +105,54 @@ def player_reward_card(enemy_skill: SkillCard) -> SkillCard:
 
 
 def enemy_skills(enemy_id: str) -> list[SkillCard]:
+    floor_two_skills = {
+        "frost_sentinel": [
+            SkillCard("서리 인장", "방어 실패 시 둔화", 0.88, 1.38, status_key="slow", status_amount=18, status_turns=2),
+            SkillCard("빙결 돌진", "느리고 강한 공격", 1.2, 0.88),
+        ],
+        "ember_stalker": [
+            SkillCard("잔불 물기", "방어 실패 시 출혈", 0.86, 1.48, status_key="bleed", status_amount=8, status_turns=2),
+            SkillCard("화염 급습", "빠른 공격", 1.14, 1.16),
+        ],
+        "rune_duelist": [
+            SkillCard("룬 파쇄", "방어 실패 시 쇠약", 0.9, 1.32, status_key="weak", status_amount=0.18),
+            SkillCard("세 겹 칼날", "무거운 공격", 1.2, 0.98),
+        ],
+        "mist_archer": [
+            SkillCard("흐린 표식", "방어 실패 시 취약", 0.84, 1.42, status_key="vulnerable", status_amount=0.18),
+            SkillCard("안개 화살", "빠르고 강한 공격", 1.18, 1.08),
+        ],
+        "iron_watcher": [
+            SkillCard("구속의 망치", "방어 실패 시 강박", 0.9, 1.22, status_key="rest_lock", status_turns=2),
+            SkillCard("강철 낙하", "느리고 강한 공격", 1.24, 0.9),
+        ],
+        "storm_hound": [
+            SkillCard("폭풍 돌진", "빠르고 강한 공격", 1.2, 1.28),
+            SkillCard("질풍 발톱", "방어 실패 시 둔화", 0.88, 1.62, status_key="slow", status_amount=16, status_turns=2),
+        ],
+        "thorn_custodian": [
+            SkillCard("가시 감옥", "방어 실패 시 강박", 0.92, 1.28, status_key="rest_lock", status_turns=2),
+            SkillCard("찔레 파열", "방어 실패 시 출혈", 1.18, 0.94, status_key="bleed", status_amount=10, status_turns=2),
+            SkillCard("뿌리 내리치기", "느리고 강한 공격", 1.34, 0.8),
+        ],
+        "rune_reaper": [
+            SkillCard("기록 절단", "방어 실패 시 쇠약", 0.96, 1.48, status_key="weak", status_amount=0.2),
+            SkillCard("룬 붕괴", "느리고 강한 공격", 1.34, 0.84),
+            SkillCard("문장 흡수", "방어 실패 시 취약", 0.9, 1.3, status_key="vulnerable", status_amount=0.2),
+        ],
+        "frost_champion": [
+            SkillCard("빙결 검무", "방어 실패 시 둔화", 1.0, 1.26, status_key="slow", status_amount=20, status_turns=2),
+            SkillCard("서리 파열", "방어 실패 시 기절", 1.24, 0.9, status_key="stun"),
+            SkillCard("빙하 단죄", "느리고 강한 공격", 1.42, 0.78),
+        ],
+        "veil_archivist": [
+            SkillCard("기억 봉인", "방어 실패 시 강박", 0.94, 1.5, status_key="rest_lock", status_turns=2),
+            SkillCard("균열 기록", "방어 실패 시 취약", 1.08, 1.22, status_key="vulnerable", status_amount=0.22),
+            SkillCard("회랑 종언", "느리고 강한 보스 공격", 1.48, 0.82),
+        ],
+    }
+    if enemy_id in floor_two_skills:
+        return floor_two_skills[enemy_id]
     if enemy_id == "floor1_guardian":
         return [
             SkillCard("회랑 강타", "무거운 보스 공격", 1.28, 0.82),

@@ -591,7 +591,7 @@ class Battle:
         if damage:
             self._record_attack_effect(source, target, quality)
         if damage and quality == "MISS" and skill.status_key and target.alive:
-            target.statuses.apply(skill.status_key, 1, skill.status_amount)
+            target.statuses.apply(skill.status_key, skill.status_turns, skill.status_amount)
             self._note(f"{target.name} · {skill.short_effect()} 상태가 적용되었습니다.")
         self._show_result(quality, target, damage)
         self.phase = "result"

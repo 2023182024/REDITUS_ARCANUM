@@ -158,6 +158,47 @@ def create_party(
 
 
 def create_enemies(encounter_id: str = "corridor") -> list[Enemy]:
+    floor_two_encounters = {
+        "floor2_battle_a": [
+            ("frost_sentinel", "서리 감시자", 148, 19, 104, (116, 184, 224)),
+            ("ember_stalker", "잿불 추적자", 152, 20, 118, (226, 130, 94)),
+        ],
+        "floor2_battle_b": [
+            ("rune_duelist", "룬 결투가", 156, 20, 112, (180, 133, 219)),
+            ("mist_archer", "안개 궁수", 146, 19, 124, (129, 178, 198)),
+        ],
+        "floor2_battle_c": [
+            ("iron_watcher", "강철 감시자", 168, 21, 94, (177, 171, 150)),
+            ("storm_hound", "폭풍 사냥개", 154, 21, 116, (146, 186, 223)),
+        ],
+        "floor2_elite_a": [
+            ("thorn_custodian", "가시 관리인", 252, 23, 106, (191, 150, 100)),
+        ],
+        "floor2_elite_b": [
+            ("rune_reaper", "룬 수확자", 270, 25, 112, (180, 125, 206)),
+        ],
+        "floor2_elite_c": [
+            ("frost_champion", "서리 집행관", 292, 26, 118, (122, 186, 222)),
+        ],
+        "floor2_boss": [
+            ("veil_archivist", "장막의 기록관", 420, 29, 114, (199, 152, 214)),
+        ],
+    }
+    if encounter_id in floor_two_encounters:
+        return [
+            Enemy(
+                unit_id=unit_id,
+                name=name,
+                side="enemy",
+                hp=hp,
+                max_hp=hp,
+                attack=attack,
+                speed=speed,
+                accent=accent,
+                skills=enemy_skills(unit_id),
+            )
+            for unit_id, name, hp, attack, speed, accent in floor_two_encounters[encounter_id]
+        ]
     if encounter_id == "floor1_elite":
         return [
             Enemy(
