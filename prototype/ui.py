@@ -30,7 +30,7 @@ CARD_POSITIONS = tuple(
 )
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
-PARTY_POSITIONS = ((360, 700), (360, 535), (360, 370), (360, 205))
+PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
@@ -491,14 +491,10 @@ class BattleScreen:
 
     def _party_display_positions(self, battle: Battle) -> dict[str, tuple[int, int]]:
         if battle.active and battle.active.side == "player":
-            active_index = battle.party.index(battle.active)
             positions = {
-                battle.active.unit_id: PARTY_POSITIONS[min(active_index, len(PARTY_POSITIONS) - 1)]
+                hero.unit_id: PARTY_POSITIONS[min(index, len(PARTY_POSITIONS) - 1)]
+                for index, hero in enumerate(battle.party)
             }
-            inactive_slots = iter(((100, 700), (100, 430), (100, 200)))
-            for hero in battle.party:
-                if hero is not battle.active:
-                    positions[hero.unit_id] = next(inactive_slots)
             self.last_player_party_positions = positions.copy()
             return positions
 
@@ -509,23 +505,23 @@ class BattleScreen:
                 for hero in battle.party
             }
 
-        # If an enemy acts before anyone on the first round, use the same
-        # vertical waiting lane rather than moving the party into a new grid.
-        waiting_slots = ((100, 700), (100, 510), (100, 320), (100, 130))
         return {
-            hero.unit_id: waiting_slots[min(index, len(waiting_slots) - 1)]
+            hero.unit_id: PARTY_POSITIONS[min(index, len(PARTY_POSITIONS) - 1)]
             for index, hero in enumerate(battle.party)
         }
 
     def _hero_visual_position(
         self, hero: PlayerCharacter, x: int, y: int
     ) -> tuple[int, int, float]:
-        focus_progress = self.turn_focus_progress.get(hero.unit_id, 0.0)
-        focus_eased = focus_progress * focus_progress * (3.0 - 2.0 * focus_progress)
+        focus_progress = max(0.0, min(1.0, self.turn_focus_progress.get(hero.unit_id, 0.0)))
         focus_x, focus_y = TURN_FOCUS_CENTER
-        display_x = round(x + (focus_x - x) * focus_eased)
-        display_y = round(y + (focus_y - y) * focus_eased)
-        visual_scale = 1.0 + (TURN_FOCUS_SCALE - 1.0) * focus_eased
+        move_progress = min(1.0, focus_progress / 0.48)
+        move_eased = 1.0 - (1.0 - move_progress) ** 3
+        zoom_progress = max(0.0, min(1.0, (focus_progress - 0.48) / 0.52))
+        zoom_eased = zoom_progress * zoom_progress * (3.0 - 2.0 * zoom_progress)
+        display_x = round(x + (focus_x - x) * move_eased)
+        display_y = round(y + (focus_y - y) * zoom_eased)
+        visual_scale = 1.0 + (TURN_FOCUS_SCALE - 1.0) * zoom_eased
         return display_x, display_y, visual_scale
 
     def _draw_active_hero_stats(self, hero: PlayerCharacter, battle: Battle) -> None:
