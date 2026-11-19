@@ -57,9 +57,9 @@ def starter_deck(character_id: str) -> list[SkillCard]:
     basic = SkillCard("공격", "기본 공격", power=1.0)
     decks = {
         "A": [
-            SkillCard("정밀 타격", "느린 속도 · 약간 좁은 판정", 1.4, 0.8, 0.045, 0.15),
+            SkillCard("정밀 타격", "느린 속도\n약간 좁은 판정", 1.4, 0.8, 0.045, 0.15),
             SkillCard(
-                "연속 베기", "2회 판정 · 모두 PERFECT면 취약 부여", 0.76, 1.1, 0.045, 0.15,
+                "연속 베기", "2회 판정\n모두 PERFECT면 취약 부여", 0.76, 1.1, 0.045, 0.15,
                 hit_count=2, effect_key="adeline_double_slash",
             ),
             SkillCard(
@@ -69,11 +69,11 @@ def starter_deck(character_id: str) -> list[SkillCard]:
             SkillCard("빈틈 찌르기", "홀드형 공격", 1.7, 1.2, 0.035, 0.12, hold_to_judge=True),
         ],
         "B": [
-            SkillCard("급소 찌르기", "높은 피해 · 좁은 판정", 1.5, 1.1, 0.035, 0.12),
-            SkillCard("회전 베기", "MISS면 속도 감소 · PERFECT면 증가", 1.6, 1.2, 0.055, 0.17, effect_key="neira_spin"),
-            SkillCard("집중", "홀드형 공격 · 다음 공격 게이지 감속", 1.2, 1.0, 0.045, 0.15, hold_to_judge=True, effect_key="neira_focus"),
+            SkillCard("급소 찌르기", "높은 피해\n좁은 판정", 1.5, 1.1, 0.035, 0.12),
+            SkillCard("회전 베기", "PERFECT면 속도 증가", 1.6, 1.2, 0.055, 0.17, effect_key="neira_spin"),
+            SkillCard("집중", "다음 공격 게이지 감속", 1.2, 1.0, 0.045, 0.15, hold_to_judge=True, effect_key="neira_focus"),
             SkillCard(
-                "삼연 암습", "3회 판정 · MISS면 연격 중단", 0.6, 1.2, 0.035, 0.12,
+                "삼연 암습", "연속 피해 증가", 0.6, 1.2, 0.035, 0.12,
                 hit_count=3, stop_on_miss=True, effect_key="neira_triple_assault",
             ),
         ],
@@ -86,10 +86,10 @@ def starter_deck(character_id: str) -> list[SkillCard]:
         "D": [
             SkillCard("흐름 베기", "빠르고 넓은 판정", 0.8, 1.1, 0.075, 0.21),
             SkillCard(
-                "쌍섬", "2회 판정 · GOOD 이상 적중마다 출혈", 0.7, 1.2, 0.055, 0.17,
+                "쌍섬", "GOOD 이상 적중마다 출혈", 0.7, 1.2, 0.055, 0.17,
                 hit_count=2, effect_key="karmina_twin_slash",
             ),
-            SkillCard("강습", "홀드형 공격 · PERFECT면 기절", 1.32, 1.2, 0.035, 0.12, hold_to_judge=True, effect_key="karmina_assault"),
+            SkillCard("강습", "PERFECT면 기절", 1.32, 1.2, 0.035, 0.12, hold_to_judge=True, effect_key="karmina_assault"),
             SkillCard("카르마", "이번 공격의 PERFECT 중첩 효과 1.5배", 1.0, 1.1, 0.055, 0.17, effect_key="karmina_karma"),
         ],
     }
