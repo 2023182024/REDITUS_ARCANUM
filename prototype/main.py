@@ -155,12 +155,12 @@ def main() -> None:
                 }
                 level_up_result = (hero.name, stat_names[level_up_stat], roll, before, after)
                 mode = "level_up_result"
+            else:
+                mode = "shop"
             level_up_character_id = None
             level_up_stat = None
             level_up_spinning = False
             level_up_roll_range = (1, 9)
-            if not hero or not level_up_stat:
-                mode = "shop"
 
         def roulette_number(now: float) -> int:
             minimum, maximum = level_up_roll_range
