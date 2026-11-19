@@ -45,7 +45,7 @@ class CampaignScreen(BattleScreen):
     def draw_title(self) -> None:
         self._clear_page()
         self.start_screen_image.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
-        self.text(720, 830, "REDITUS ARCANUM", 38, TEXT, centered=True)
+        self.text(720, 830, "REDITUS ARCANUM", 38, (0, 0, 0), centered=True)
         self.panel(*self.start_rect[:2], self.start_rect[2] - self.start_rect[0], self.start_rect[3] - self.start_rect[1], (52, 48, 42), GOLD)
         self.text(720, 278, "게임 시작", 26, GOLD, centered=True)
         p2d.update_canvas()
