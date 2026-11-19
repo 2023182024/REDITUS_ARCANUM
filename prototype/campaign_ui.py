@@ -17,6 +17,7 @@ import pico2d as p2d
 class CampaignScreen(BattleScreen):
     def __init__(self, asset_root):
         super().__init__(asset_root)
+        self.start_screen_image = p2d.load_image(str(asset_root / "images" / "start_screen.png"))
         self.start_rect = (535, 230, 905, 325)
         self.confirm_rect = (540, 125, 900, 205)
         self.character_rects: dict[str, tuple[int, int, int, int]] = {}
@@ -43,9 +44,7 @@ class CampaignScreen(BattleScreen):
 
     def draw_title(self) -> None:
         self._clear_page()
-        self.circle(720, 540, 260, (27, 35, 52), filled=True)
-        self.circle(720, 540, 235, (48, 43, 52), filled=False)
-        self.image(self.portraits["D"], 720, 520, 238, 357)
+        self.start_screen_image.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self.text(720, 830, "REDITUS ARCANUM", 38, TEXT, centered=True)
         self.panel(*self.start_rect[:2], self.start_rect[2] - self.start_rect[0], self.start_rect[3] - self.start_rect[1], (52, 48, 42), GOLD)
         self.text(720, 278, "게임 시작", 26, GOLD, centered=True)

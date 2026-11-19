@@ -98,6 +98,10 @@ class BattleScreen:
             key: p2d.load_image(str(asset_root / "images" / "effects" / filename))
             for key, filename in effect_files.items()
         }
+        self.defense_effects = {
+            key: p2d.load_image(str(asset_root / "images" / "effects" / f"{key}.png"))
+            for key in ("guard", "avoid")
+        }
         self.card_frames = {
             character_id: p2d.load_image(
                 str(asset_root / "images" / "card_frames" / f"reditus_card_frame_{character_id.lower()}.png")
@@ -413,6 +417,7 @@ class BattleScreen:
             )
             if active_hero and self.turn_focus_progress.get(active_hero.unit_id, 0.0) >= 0.82:
                 self._draw_active_hero_stats(active_hero, battle)
+        self._draw_defense_effect(battle, now)
         self._draw_attack_effect(battle, now)
 
         if battle.phase == "enemy_skill_reveal":
@@ -642,6 +647,29 @@ class BattleScreen:
             flash.opacify(max(0.0, 1.0 - flash_progress))
             self.image(flash, x, y, round(124 * flash_scale), round(124 * flash_scale))
             flash.opacify(1.0)
+
+    def _draw_defense_effect(self, battle: Battle, now: float) -> None:
+        effect = battle.defense_effect
+        if not effect:
+            return
+        elapsed = now - effect.started_at
+        duration = 0.62
+        if elapsed < 0 or elapsed > duration:
+            return
+
+        target = next((hero for hero in battle.party if hero.unit_id == effect.target_id), None)
+        if not target:
+            return
+
+        progress = max(0.0, min(1.0, elapsed / duration))
+        eased = 1.0 - (1.0 - progress) ** 3
+        opacity = (1.0 - progress) ** 1.2
+        scale = 0.72 + 0.38 * eased
+        x, y = self._unit_position(battle, target)
+        sprite = self.defense_effects[effect.effect_key]
+        sprite.opacify(opacity)
+        self.image(sprite, x, y, round(190 * scale), round(190 * scale))
+        sprite.opacify(1.0)
 
     def _unit_position(self, battle: Battle, unit) -> tuple[int, int]:
         if unit.side == "player":

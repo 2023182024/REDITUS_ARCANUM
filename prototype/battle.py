@@ -26,6 +26,13 @@ class AttackEffectState:
     started_at: float
 
 
+@dataclass(frozen=True)
+class DefenseEffectState:
+    target_id: str
+    effect_key: str
+    started_at: float
+
+
 class Battle:
     ENEMY_SKILL_REVEAL_DURATION = 1.5
     MULTI_HIT_GAP = 0.42
@@ -109,6 +116,7 @@ class Battle:
         self.result_damage = 0
         self.result_started_at = 0.0
         self.attack_effect: AttackEffectState | None = None
+        self.defense_effect: DefenseEffectState | None = None
         self.result_until = 0.0
         self.log_lines: list[str] = []
         self.roll_by_id: dict[str, int] = {}
@@ -555,6 +563,10 @@ class Battle:
         source, target, skill = self.incoming_source, self.incoming_target, self.incoming_skill
         if not source or not target or not skill:
             return
+        self.defense_effect = None
+        if quality in ("GOOD", "PERFECT"):
+            effect_key = "avoid" if quality == "PERFECT" and target.unit_id == "B" else "guard"
+            self.defense_effect = DefenseEffectState(target.unit_id, effect_key, time.monotonic())
         weak = source.statuses.consume("weak")
         weak_scale = max(0.45, 1 - weak.amount) if weak else 1.0
         guard = self.guard_reduction_by_id.get(target.unit_id)
