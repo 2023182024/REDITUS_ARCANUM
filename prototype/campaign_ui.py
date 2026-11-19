@@ -120,12 +120,12 @@ class CampaignScreen(BattleScreen):
     def _draw_route_panel(
         self, character_id: str, party: list[PlayerCharacter] | None = None
     ) -> None:
-        self.panel(34, 215, 286, 620, PANEL)
+        self.panel(34, 50, 286, 785, PANEL)
         party = party or []
         party_ids = [hero.unit_id for hero in party] if party else [character_id]
-        self.text(177, 803, f"동행자  {len(party_ids)} / 4", 17, GOLD, centered=True)
-        self.text(177, 780, "캐릭터를 클릭하면 덱을 확인합니다", 11, MUTED, centered=True)
-        slot_rects = ((48, 644, 306, 750), (48, 524, 306, 630), (48, 404, 306, 510), (48, 284, 306, 390))
+        self.text(177, 813, f"동행자  {len(party_ids)} / 4", 17, GOLD, centered=True)
+        self.text(177, 792, "캐릭터를 클릭하면 덱을 확인합니다", 11, MUTED, centered=True)
+        slot_rects = ((48, 618, 306, 780), (48, 448, 306, 610), (48, 278, 306, 440), (48, 108, 306, 270))
         for index, rect in enumerate(slot_rects):
             member_id = party_ids[index] if index < len(party_ids) else None
             if member_id:
@@ -133,24 +133,25 @@ class CampaignScreen(BattleScreen):
                 data = character_info(member_id)
                 self.map_character_rects[member_id] = rect
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL_LIGHT, data["accent"])
-                self.image(self.small_portraits[member_id], rect[0] + 43, rect[1] + 54, 54, 81)
-                name = hero.name if hero else data["name"]
+                self.image(self.small_portraits[member_id], rect[0] + 64, rect[1] + 81, 108, 162)
+                info_x = rect[0] + 188
+                name = (hero.name if hero else data["name"]).split(" · ", 1)[0]
                 hp_text = f"HP {hero.hp}/{hero.max_hp}" if hero else f"HP {data['hp']}"
                 attack = hero.attack if hero else data["attack"]
                 speed = hero.speed if hero else data["speed"]
                 level = hero.level if hero else 1
-                self.text(rect[0] + 84, rect[1] + 78, f"{name} · Lv.{level}", 13, data["accent"])
-                self.text(rect[0] + 84, rect[1] + 56, f"{hp_text}  ·  ATK {attack}", 11, TEXT)
-                self.text(rect[0] + 84, rect[1] + 38, f"SPD {speed}", 10, MUTED)
-                self.text(rect[0] + 84, rect[1] + 17, "클릭하여 덱 보기", 10, GOLD)
+                self.text(info_x, rect[1] + 137, f"{name} · Lv.{level}", 11, data["accent"])
+                self.text(info_x, rect[1] + 111, hp_text, 9, TEXT)
+                self.text(info_x, rect[1] + 91, f"ATK {attack} · SPD {speed}", 9, MUTED)
+                self.text(info_x, rect[1] + 20, "클릭하여 덱 보기", 9, GOLD)
             else:
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL, LINE)
-                self.circle(rect[0] + 43, rect[1] + 53, 22, PANEL_LIGHT, filled=True)
-                self.text(rect[0] + 43, rect[1] + 53, "+", 23, MUTED, centered=True)
-                self.text(rect[0] + 84, rect[1] + 65, "영입 대기 슬롯", 13, MUTED)
-                self.text(rect[0] + 84, rect[1] + 41, "동료 영입 후 표시", 10, MUTED)
-        self.text(58, 252, "층 진행  1 / 1", 15, GOLD)
-        self.text(58, 229, "현재 프로토타입은 1층까지", 11, MUTED)
+                self.circle(rect[0] + 64, rect[1] + 81, 28, PANEL_LIGHT, filled=True)
+                self.text(rect[0] + 64, rect[1] + 81, "+", 28, MUTED, centered=True)
+                self.text(rect[0] + 188, rect[1] + 95, "영입 대기 슬롯", 11, MUTED)
+                self.text(rect[0] + 188, rect[1] + 72, "동료 영입 후 표시", 9, MUTED)
+        self.text(58, 87, "층 진행  1 / 1", 13, GOLD)
+        self.text(58, 66, "현재 프로토타입은 1층까지", 9, MUTED)
 
     def _draw_map_node(self, node) -> None:
         if node.kind == "start":

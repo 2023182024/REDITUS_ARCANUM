@@ -31,7 +31,7 @@ CARD_POSITIONS = tuple(
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
 PARTY_POSITIONS = ((360, 700), (360, 535), (360, 370), (360, 205))
-WAITING_ALLY_POSITIONS = ((90, 720), (90, 530), (90, 340), (90, 150))
+WAITING_ALLY_POSITIONS = ((90, 700), (90, 510), (90, 320), (90, 130))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
@@ -455,8 +455,9 @@ class BattleScreen:
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
         display_x, display_y, visual_scale = self._hero_visual_position(hero, x, y)
-        portrait_width, portrait_height = (110, 165) if active else (50, 75)
-        radius = round((60 if active else 30) * visual_scale)
+        portrait_width, portrait_height = (110, 165) if active else (100, 150)
+        portrait_scale = visual_scale if active else min(1.0, visual_scale)
+        radius = round((60 if active else 50) * portrait_scale)
         self.circle(display_x, display_y, radius, glow, filled=True)
         if hero.alive:
             self.circle(display_x, display_y, radius, border, filled=False)
@@ -464,20 +465,20 @@ class BattleScreen:
                 self.portraits[hero.unit_id] if active else self.small_portraits[hero.unit_id],
                 display_x,
                 display_y,
-                round(portrait_width * visual_scale),
-                round(portrait_height * visual_scale),
+                round(portrait_width * portrait_scale),
+                round(portrait_height * portrait_scale),
             )
         else:
             self.circle(display_x, display_y, 30 if active else 22, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         if not active:
-            info_x = display_x + 65
+            info_x = display_x + 105
             short_name = hero.name.split(" · ", 1)[0]
-            self.text(info_x, display_y - 40, short_name, 12, border, centered=True)
-            self._bar(info_x - 48, display_y - 55, 96, 5, hero.hp / hero.max_hp, hero.accent)
+            self.text(info_x, display_y + 52, short_name, 12, border, centered=True)
+            self._bar(info_x - 58, display_y + 32, 116, 5, hero.hp / hero.max_hp, hero.accent)
             self.text(
                 info_x,
-                display_y - 70,
+                display_y + 12,
                 f"HP {hero.hp}/{hero.max_hp}",
                 9,
                 MUTED,
@@ -485,7 +486,7 @@ class BattleScreen:
             )
             self.text(
                 info_x,
-                display_y - 84,
+                display_y - 7,
                 f"ATK {hero.attack} · SPD {hero.effective_speed()}",
                 9,
                 MUTED,
@@ -493,9 +494,9 @@ class BattleScreen:
             )
             effects = hero.statuses.snapshot()[:1]
             for index, effect in enumerate(effects):
-                self.text(info_x, display_y - 101, effect.display(), 9, CORAL, centered=True)
+                self.text(info_x, display_y - 27, effect.display(), 9, CORAL, centered=True)
             if hero.unit_id == "D" and hero.perfect_stacks:
-                self.text(info_x, display_y - 115, f"P+{hero.perfect_stacks}", 9, GOLD, centered=True)
+                self.text(info_x, display_y - 44, f"P+{hero.perfect_stacks}", 9, GOLD, centered=True)
 
     def _party_display_positions(self, battle: Battle) -> dict[str, tuple[int, int]]:
         if battle.active and battle.active.side == "player":
