@@ -65,6 +65,7 @@ def main() -> None:
         level_up_spin_started_at = 0.0
         level_up_roll_range = (1, 9)
         level_up_result: tuple[str, str, int, dict[str, int], dict[str, int]] | None = None
+        level_up_result_confirm_enabled_at = 0.0
         last_coin_reward = 0
         reward_coins_paid = False
         running = True
@@ -132,6 +133,7 @@ def main() -> None:
         def finish_level_up(roll: int) -> None:
             nonlocal mode, level_up_character_id, level_up_stat, level_up_spinning
             nonlocal shop_notice, level_up_roll_range, level_up_result
+            nonlocal level_up_result_confirm_enabled_at
             hero = next(
                 (member for member in campaign_roster if member.unit_id == level_up_character_id),
                 None,
@@ -154,6 +156,7 @@ def main() -> None:
                     "speed": hero.speed,
                 }
                 level_up_result = (hero.name, stat_names[level_up_stat], roll, before, after)
+                level_up_result_confirm_enabled_at = time.monotonic() + 0.3
                 mode = "level_up_result"
             level_up_character_id = None
             level_up_stat = None
@@ -316,7 +319,10 @@ def main() -> None:
                                 reward_character_cursor = character_index
                                 claim_reward(campaign_roster[character_index].unit_id)
                     elif mode == "level_up_result" and level_up_result:
-                        if screen.level_up_result_confirm_clicked(x, y):
+                        if (
+                            time.monotonic() >= level_up_result_confirm_enabled_at
+                            and screen.level_up_result_confirm_clicked(x, y)
+                        ):
                             _, stat_name, roll, _, _ = level_up_result
                             level_up_result = None
                             mode = "shop"

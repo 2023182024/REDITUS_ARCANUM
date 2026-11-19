@@ -31,7 +31,7 @@ class CampaignScreen(BattleScreen):
         self.shop_leave_rect = (1120, 112, 1350, 184)
         self.level_up_stat_rects: dict[str, tuple[int, int, int, int]] = {}
         self.level_up_spin_rect = (560, 250, 880, 330)
-        self.level_up_result_confirm_rect = (570, 210, 870, 276)
+        self.level_up_result_confirm_rect = (570, 180, 870, 245)
         self.relic_replace_rects: list[tuple[int, int, int, int]] = []
         self.relic_replace_cancel_rect = (580, 155, 860, 220)
         self.map_restart_rect = (50, 868, 202, 910)
