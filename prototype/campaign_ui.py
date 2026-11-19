@@ -31,6 +31,7 @@ class CampaignScreen(BattleScreen):
         self.shop_leave_rect = (1120, 112, 1350, 184)
         self.level_up_stat_rects: dict[str, tuple[int, int, int, int]] = {}
         self.level_up_spin_rect = (560, 250, 880, 330)
+        self.level_up_result_confirm_rect = (570, 210, 870, 276)
         self.relic_replace_rects: list[tuple[int, int, int, int]] = []
         self.relic_replace_cancel_rect = (580, 155, 860, 220)
         self.map_restart_rect = (50, 868, 202, 910)
@@ -382,6 +383,7 @@ class CampaignScreen(BattleScreen):
         relic_ids: list[str],
         reroll_cost: int,
         notice: str = "",
+        update_canvas: bool = True,
     ) -> None:
         self._clear_page()
         self.text(720, 900, "떠돌이 상점", 32, GOLD, centered=True)
@@ -437,7 +439,8 @@ class CampaignScreen(BattleScreen):
         relic_names = " · ".join(RELIC_BY_ID[relic_id].name for relic_id in relic_ids) or "없음"
         self.text(720, 214, f"보유 유물: {relic_names}", 12, MINT, centered=True)
         self.text(720, 94, notice or "상품은 각 분류에서 하나씩 무작위로 제시됩니다.", 13, MUTED if not notice else GOLD, centered=True)
-        p2d.update_canvas()
+        if update_canvas:
+            p2d.update_canvas()
 
     def draw_level_up(
         self,
@@ -472,6 +475,41 @@ class CampaignScreen(BattleScreen):
         self.text(720, 279, spinning_label, 20, GOLD if selected_stat else MUTED, centered=True)
         instruction = "SPACE를 눌러 룰렛을 멈추세요" if spinning else "스탯을 선택한 뒤 룰렛을 시작하세요"
         self.text(720, 228, instruction, 14, MUTED, centered=True)
+        p2d.update_canvas()
+
+    def draw_level_up_result(
+        self,
+        hero_name: str,
+        stat_name: str,
+        roll: int,
+        before: dict[str, int],
+        after: dict[str, int],
+    ) -> None:
+        self.panel(290, 165, 860, 620, (20, 27, 41), GOLD)
+        self.text(720, 728, "강화 완료", 30, GOLD, centered=True)
+        self.text(720, 686, f"{hero_name} · {stat_name} +{roll}", 16, TEXT, centered=True)
+        self.text(780, 630, "강화 전", 15, MUTED, centered=True)
+        self.text(1000, 630, "강화 후", 15, MINT, centered=True)
+
+        rows = (
+            ("레벨", "level"),
+            ("현재 체력", "hp"),
+            ("최대 체력", "max_hp"),
+            ("공격력", "attack"),
+            ("속도", "speed"),
+        )
+        for index, (label, key) in enumerate(rows):
+            y = 575 - index * 57
+            self.line(390, y - 23, 1050, y - 23, LINE)
+            self.text(430, y, label, 16, TEXT)
+            self.text(780, y, str(before[key]), 16, MUTED, centered=True)
+            increase = after[key] - before[key]
+            after_text = f"{after[key]}  (+{increase})" if increase > 0 else str(after[key])
+            self.text(1000, y, after_text, 16, MINT, centered=True)
+
+        rect = self.level_up_result_confirm_rect
+        self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], (52, 48, 42), GOLD)
+        self.text((rect[0] + rect[2]) / 2, rect[1] + 21, "확인", 17, GOLD, centered=True)
         p2d.update_canvas()
 
     def draw_relic_replacement(
@@ -519,6 +557,9 @@ class CampaignScreen(BattleScreen):
 
     def level_up_spin_clicked(self, x: int, y: int) -> bool:
         return self._inside(x, y, self.level_up_spin_rect)
+
+    def level_up_result_confirm_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.level_up_result_confirm_rect)
 
     def relic_replace_at(self, x: int, y: int) -> int | None:
         for index, rect in enumerate(self.relic_replace_rects):

@@ -64,6 +64,7 @@ def main() -> None:
         level_up_spinning = False
         level_up_spin_started_at = 0.0
         level_up_roll_range = (1, 9)
+        level_up_result: tuple[str, str, int, dict[str, int], dict[str, int]] | None = None
         last_coin_reward = 0
         reward_coins_paid = False
         running = True
@@ -130,20 +131,36 @@ def main() -> None:
 
         def finish_level_up(roll: int) -> None:
             nonlocal mode, level_up_character_id, level_up_stat, level_up_spinning
-            nonlocal shop_notice, level_up_roll_range
+            nonlocal shop_notice, level_up_roll_range, level_up_result
             hero = next(
                 (member for member in campaign_roster if member.unit_id == level_up_character_id),
                 None,
             )
             if hero and level_up_stat:
+                before = {
+                    "level": hero.level,
+                    "hp": hero.hp,
+                    "max_hp": hero.max_hp,
+                    "attack": hero.attack,
+                    "speed": hero.speed,
+                }
                 hero.level_up(level_up_stat, roll)
                 stat_names = {"hp": "최대 체력", "attack": "공격력", "speed": "속도"}
-                shop_notice = f"{hero.name} Lv.{hero.level} · {stat_names[level_up_stat]} +{roll}"
+                after = {
+                    "level": hero.level,
+                    "hp": hero.hp,
+                    "max_hp": hero.max_hp,
+                    "attack": hero.attack,
+                    "speed": hero.speed,
+                }
+                level_up_result = (hero.name, stat_names[level_up_stat], roll, before, after)
+                mode = "level_up_result"
             level_up_character_id = None
             level_up_stat = None
             level_up_spinning = False
             level_up_roll_range = (1, 9)
-            mode = "shop"
+            if not hero or not level_up_stat:
+                mode = "shop"
 
         def roulette_number(now: float) -> int:
             minimum, maximum = level_up_roll_range
@@ -171,6 +188,8 @@ def main() -> None:
                             mode = "shop"
                             shop_notice = "유물 교체를 취소했습니다."
                         elif mode == "level_up":
+                            pass
+                        elif mode == "level_up_result":
                             pass
                         elif mode in ("select", "map", "complete"):
                             if mode == "map" and screen.deck_preview_character_id:
@@ -296,6 +315,12 @@ def main() -> None:
                             if character_index is not None and character_index < len(campaign_roster):
                                 reward_character_cursor = character_index
                                 claim_reward(campaign_roster[character_index].unit_id)
+                    elif mode == "level_up_result" and level_up_result:
+                        if screen.level_up_result_confirm_clicked(x, y):
+                            _, stat_name, roll, _, _ = level_up_result
+                            level_up_result = None
+                            mode = "shop"
+                            shop_notice = f"강화 완료 · {stat_name} +{roll}"
                     elif mode == "shop":
                         if screen.shop_leave_clicked(x, y):
                             leave_shop()
@@ -401,6 +426,18 @@ def main() -> None:
                     shop_reroll_count * SHOP_REROLL_STEP,
                     shop_notice,
                 )
+            elif mode == "level_up_result" and level_up_result:
+                screen.draw_shop(
+                    coins,
+                    shop_offers,
+                    campaign_roster,
+                    relic_ids,
+                    shop_reroll_count * SHOP_REROLL_STEP,
+                    shop_notice,
+                    update_canvas=False,
+                )
+                hero_name, stat_name, roll, before, after = level_up_result
+                screen.draw_level_up_result(hero_name, stat_name, roll, before, after)
             elif mode == "level_up" and level_up_character_id:
                 hero = next(
                     (member for member in campaign_roster if member.unit_id == level_up_character_id),
