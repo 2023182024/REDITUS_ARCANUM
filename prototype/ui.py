@@ -30,8 +30,7 @@ CARD_POSITIONS = tuple(
 )
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
-PARTY_POSITIONS = ((360, 700), (360, 535), (360, 370), (360, 205))
-WAITING_ALLY_POSITIONS = ((90, 700), (90, 510), (90, 320), (90, 130))
+PARTY_POSITIONS = ((150, 700), (150, 535), (150, 370), (150, 205))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
@@ -84,12 +83,9 @@ class BattleScreen:
         self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
         self.portraits: dict[str, p2d.Image] = {}
-        self.small_portraits: dict[str, p2d.Image] = {}
         for character_id in "ABCD":
             path = asset_root / "images" / "characters_5x" / f"{character_id}.png"
             self.portraits[character_id] = p2d.load_image(str(path))
-            small_path = asset_root / "images" / "characters_optimized" / f"{character_id}.png"
-            self.small_portraits[character_id] = p2d.load_image(str(small_path))
         effect_files = {
             "A": "A_precision.png",
             "B": "B_twin_slash.png",
@@ -127,6 +123,7 @@ class BattleScreen:
         self.selected_card_motion: CardMotion | None = None
         self.returning_card_motions: dict[tuple[str, int], CardMotion] = {}
         self.party_display_positions: dict[str, tuple[int, int]] = {}
+        self.last_player_party_positions: dict[str, tuple[int, int]] = {}
 
     @staticmethod
     def _find_font() -> str:
@@ -455,48 +452,42 @@ class BattleScreen:
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
         display_x, display_y, visual_scale = self._hero_visual_position(hero, x, y)
-        portrait_width, portrait_height = (110, 165) if active else (100, 150)
-        portrait_scale = visual_scale if active else min(1.0, visual_scale)
-        radius = round((60 if active else 50) * portrait_scale)
+        radius = round(60 * visual_scale)
         self.circle(display_x, display_y, radius, glow, filled=True)
         if hero.alive:
             self.circle(display_x, display_y, radius, border, filled=False)
             self.image(
-                self.portraits[hero.unit_id] if active else self.small_portraits[hero.unit_id],
+                self.portraits[hero.unit_id],
                 display_x,
                 display_y,
-                round(portrait_width * portrait_scale),
-                round(portrait_height * portrait_scale),
+                round(110 * visual_scale),
+                round(165 * visual_scale),
             )
         else:
-            self.circle(display_x, display_y, 30 if active else 22, (70, 75, 86), filled=True)
+            self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         if not active:
-            info_x = display_x + 105
-            short_name = hero.name.split(" · ", 1)[0]
-            self.text(info_x, display_y + 52, short_name, 12, border, centered=True)
-            self._bar(info_x - 58, display_y + 32, 116, 5, hero.hp / hero.max_hp, hero.accent)
+            info_x = display_x
+            self.text(info_x, display_y - 100, hero.name, 15, border, centered=True)
+            self._bar(info_x - 89, display_y - 119, 178, 7, hero.hp / hero.max_hp, hero.accent)
             self.text(
                 info_x,
-                display_y + 12,
-                f"HP {hero.hp}/{hero.max_hp}",
-                9,
-                MUTED,
-                centered=True,
-            )
-            self.text(
-                info_x,
-                display_y - 7,
-                f"ATK {hero.attack} · SPD {hero.effective_speed()}",
-                9,
+                display_y - 139,
+                f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}",
+                11,
                 MUTED,
                 centered=True,
             )
             effects = hero.statuses.snapshot()[:1]
             for index, effect in enumerate(effects):
-                self.text(info_x, display_y - 27, effect.display(), 9, CORAL, centered=True)
+                self._draw_chip(info_x - 58 + index * 66, display_y - 162, effect.label, (99, 58, 70))
             if hero.unit_id == "D" and hero.perfect_stacks:
-                self.text(info_x, display_y - 44, f"P+{hero.perfect_stacks}", 9, GOLD, centered=True)
+                self._draw_chip(
+                    info_x - 58 + len(effects) * 66,
+                    display_y - 162,
+                    f"P+{hero.perfect_stacks}",
+                    (99, 81, 43),
+                )
 
     def _party_display_positions(self, battle: Battle) -> dict[str, tuple[int, int]]:
         if battle.active and battle.active.side == "player":
@@ -504,14 +495,25 @@ class BattleScreen:
             positions = {
                 battle.active.unit_id: PARTY_POSITIONS[min(active_index, len(PARTY_POSITIONS) - 1)]
             }
-            inactive_slots = iter(WAITING_ALLY_POSITIONS)
+            inactive_slots = iter(((100, 700), (100, 430), (100, 200)))
             for hero in battle.party:
                 if hero is not battle.active:
                     positions[hero.unit_id] = next(inactive_slots)
+            self.last_player_party_positions = positions.copy()
             return positions
 
+        party_ids = {hero.unit_id for hero in battle.party}
+        if party_ids and party_ids.issubset(self.last_player_party_positions):
+            return {
+                hero.unit_id: self.last_player_party_positions[hero.unit_id]
+                for hero in battle.party
+            }
+
+        # If an enemy acts before anyone on the first round, use the same
+        # vertical waiting lane rather than moving the party into a new grid.
+        waiting_slots = ((100, 700), (100, 510), (100, 320), (100, 130))
         return {
-            hero.unit_id: WAITING_ALLY_POSITIONS[min(index, len(WAITING_ALLY_POSITIONS) - 1)]
+            hero.unit_id: waiting_slots[min(index, len(waiting_slots) - 1)]
             for index, hero in enumerate(battle.party)
         }
 
