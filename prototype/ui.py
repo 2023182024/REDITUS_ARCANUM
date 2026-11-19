@@ -30,7 +30,7 @@ CARD_POSITIONS = tuple(
 )
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
-PARTY_POSITIONS = ((150, 815), (150, 605), (150, 395), (150, 185))
+PARTY_POSITIONS = ((190, 690), (190, 510), (190, 330), (190, 150))
 TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
@@ -467,24 +467,32 @@ class BattleScreen:
             self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         if not active:
-            info_x = display_x
-            self.text(info_x, display_y - 100, hero.name, 15, border, centered=True)
-            self._bar(info_x - 89, display_y - 119, 178, 7, hero.hp / hero.max_hp, hero.accent)
+            info_x = 75
+            self.text(info_x, display_y + 52, hero.name, 14, border, centered=True)
+            self._bar(info_x - 50, display_y + 32, 100, 6, hero.hp / hero.max_hp, hero.accent)
             self.text(
                 info_x,
-                display_y - 139,
-                f"HP {hero.hp}/{hero.max_hp}  ·  ATK {hero.attack}  SPD {hero.effective_speed()}",
-                11,
+                display_y + 13,
+                f"HP {hero.hp}/{hero.max_hp}",
+                10,
+                MUTED,
+                centered=True,
+            )
+            self.text(
+                info_x,
+                display_y - 5,
+                f"ATK {hero.attack} · SPD {hero.effective_speed()}",
+                9,
                 MUTED,
                 centered=True,
             )
             effects = hero.statuses.snapshot()[:1]
             for index, effect in enumerate(effects):
-                self._draw_chip(info_x - 58 + index * 66, display_y - 162, effect.label, (99, 58, 70))
+                self._draw_chip(info_x - 31 + index * 62, display_y - 34, effect.label, (99, 58, 70))
             if hero.unit_id == "D" and hero.perfect_stacks:
                 self._draw_chip(
-                    info_x - 58 + len(effects) * 66,
-                    display_y - 162,
+                    info_x - 31 + len(effects) * 62,
+                    display_y - 34,
                     f"P+{hero.perfect_stacks}",
                     (99, 81, 43),
                 )
