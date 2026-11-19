@@ -88,7 +88,7 @@ class BattleScreen:
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
         self.portraits: dict[str, p2d.Image] = {}
         for character_id in "ABCD":
-            path = asset_root / "images" / f"{character_id}.png"
+            path = asset_root / "images" / "characters_optimized" / f"{character_id}.png"
             self.portraits[character_id] = self._load_filtered_image(str(path))
         effect_files = {
             "A": "A_precision.png",
