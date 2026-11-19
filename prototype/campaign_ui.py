@@ -134,7 +134,7 @@ class CampaignScreen(BattleScreen):
                 self.map_character_rects[member_id] = rect
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL_LIGHT, data["accent"])
                 self.image(self.portraits[member_id], rect[0] + 64, rect[1] + 81, 108, 162)
-                info_x = rect[0] + 188
+                info_x = rect[0] + 155
                 name = (hero.name if hero else data["name"]).split(" · ", 1)[0]
                 hp_text = f"HP {hero.hp}/{hero.max_hp}" if hero else f"HP {data['hp']}"
                 attack = hero.attack if hero else data["attack"]

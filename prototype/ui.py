@@ -30,8 +30,8 @@ CARD_POSITIONS = tuple(
 )
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
-PARTY_POSITIONS = ((190, 690), (190, 510), (190, 330), (190, 150))
-TURN_FOCUS_CENTER = (round(DESIGN_WIDTH / 4), DESIGN_HEIGHT // 2)
+PARTY_POSITIONS = ((230, 690), (230, 510), (230, 330), (230, 150))
+TURN_FOCUS_CENTER = (410, DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
 TURN_FOCUS_ANIMATION_DURATION = 0.38
 CANCEL_TARGET_RECT = REST_RECT
@@ -397,7 +397,7 @@ class BattleScreen:
 
     def _draw_battlefield(self, battle: Battle, now: float) -> None:
         self.rect(28, 0, 1384, 778, (54, 66, 86), filled=False)
-        self.text(48, 753, "전투", 16, MUTED)
+        self.text(48, 760, "전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
 
         self.party_display_positions = self._party_display_positions(battle)
@@ -467,7 +467,7 @@ class BattleScreen:
             self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
         if not active:
-            info_x = 75
+            info_x = 115
             self.text(info_x, display_y + 52, hero.name, 14, border, centered=True)
             self._bar(info_x - 50, display_y + 32, 100, 6, hero.hp / hero.max_hp, hero.accent)
             self.text(
@@ -539,7 +539,7 @@ class BattleScreen:
         portrait_bottom = display_y - 82.5 * visual_scale
         panel_top = round(portrait_bottom - 12)
         panel_height = 116
-        panel_width = 300
+        panel_width = 230
         left = display_x - panel_width // 2
         bottom = panel_top - panel_height
         self.panel(left, bottom, panel_width, panel_height, (18, 24, 37), hero.accent)
