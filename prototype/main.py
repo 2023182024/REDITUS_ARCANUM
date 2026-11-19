@@ -10,17 +10,10 @@ import pico2d as p2d
 
 from battle import Battle
 from campaign import FloorOne
-from campaign_economy import (
-    SHOP_REROLL_STEP,
-    STARTING_COINS,
-    ShopOffer,
-    adjusted_price,
-    make_shop_offers,
-    victory_coins,
-)
+from campaign_economy import STARTING_COINS, ShopOffer, victory_coins
 from cards import SkillCard, player_reward_card, starter_deck
 from campaign_ui import CampaignScreen
-from relics import MAX_RELICS, RELIC_BY_ID
+from shop import ShopSession
 from units import CHARACTER_DATA, PlayerCharacter, create_party
 from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
 
@@ -55,9 +48,7 @@ def main() -> None:
         coins = STARTING_COINS
         relic_ids: list[str] = []
         campaign_roster: list[PlayerCharacter] = []
-        shop_offers: list[ShopOffer] = []
-        shop_reroll_count = 0
-        shop_notice = ""
+        shop = ShopSession()
         pending_relic_offer: ShopOffer | None = None
         level_up_character_id: str | None = None
         level_up_stat: str | None = None
@@ -123,15 +114,9 @@ def main() -> None:
             map_notice = "상점 방문을 마쳤습니다."
             map_notice_until = time.monotonic() + 3.0
 
-        def refresh_shop_prices() -> None:
-            discount = "merchant_scale" in relic_ids
-            for offer in shop_offers:
-                if offer.available and not offer.sold and offer.base_price is not None:
-                    offer.price = adjusted_price(offer.base_price, discount)
-
         def finish_level_up(roll: int) -> None:
             nonlocal mode, level_up_character_id, level_up_stat, level_up_spinning
-            nonlocal shop_notice, level_up_roll_range, level_up_result
+            nonlocal level_up_roll_range, level_up_result
             hero = next(
                 (member for member in campaign_roster if member.unit_id == level_up_character_id),
                 None,
@@ -171,13 +156,13 @@ def main() -> None:
                 finish_level_up(roulette_number(now))
 
         def confirm_level_up_result() -> None:
-            nonlocal level_up_result, mode, shop_notice
+            nonlocal level_up_result, mode
             if not level_up_result:
                 return
             _, stat_name, roll, _, _ = level_up_result
             level_up_result = None
             mode = "shop"
-            shop_notice = f"강화 완료 · {stat_name} +{roll}"
+            shop.notice = f"강화 완료 · {stat_name} +{roll}"
 
         while running:
             frame_start = time.monotonic()
@@ -195,7 +180,7 @@ def main() -> None:
                         elif mode == "relic_replace":
                             pending_relic_offer = None
                             mode = "shop"
-                            shop_notice = "유물 교체를 취소했습니다."
+                            shop.notice = "유물 교체를 취소했습니다."
                         elif mode == "level_up":
                             pass
                         elif mode == "level_up_result":
@@ -241,8 +226,7 @@ def main() -> None:
                         campaign_roster.clear()
                         relic_ids.clear()
                         coins = STARTING_COINS
-                        shop_offers = []
-                        shop_reroll_count = 0
+                        shop.reset()
                         reward_coins_paid = False
                         mode = "select"
                     elif mode == "select":
@@ -277,9 +261,7 @@ def main() -> None:
                                 if node_id == "shop":
                                     if not campaign_roster:
                                         campaign_roster = create_party([selected_character_id], campaign_decks)
-                                    shop_offers = make_shop_offers(campaign_roster, relic_ids)
-                                    shop_reroll_count = 0
-                                    shop_notice = ""
+                                    shop.enter(campaign_roster, relic_ids)
                                     pending_relic_offer = None
                                     mode = "shop"
                                 elif node_id and node_id in ("battle_1", "battle_2", "elite", "boss"):
@@ -335,46 +317,27 @@ def main() -> None:
                         if screen.shop_leave_clicked(x, y):
                             leave_shop()
                         elif screen.shop_reroll_clicked(x, y):
-                            reroll_cost = shop_reroll_count * SHOP_REROLL_STEP
-                            if coins >= reroll_cost:
-                                coins -= reroll_cost
-                                shop_reroll_count += 1
-                                shop_offers = make_shop_offers(campaign_roster, relic_ids)
-                                shop_notice = f"상품을 재배치했습니다. 다음 재배치 비용 {shop_reroll_count * SHOP_REROLL_STEP}코인"
-                            else:
-                                shop_notice = "코인이 부족합니다."
+                            coins = shop.reroll(coins, campaign_roster, relic_ids)
                         else:
                             offer_index = screen.shop_offer_at(x, y)
                             if offer_index is not None:
-                                offer = shop_offers[offer_index]
-                                if offer.available and not offer.sold:
-                                    if coins < offer.price:
-                                        shop_notice = "코인이 부족합니다."
-                                    elif offer.category == "recruit" and offer.item_id:
-                                        coins -= offer.price
-                                        campaign_decks[offer.item_id] = starter_deck(offer.item_id)
-                                        recruit = create_party([offer.item_id], campaign_decks)[0]
-                                        campaign_roster.append(recruit)
-                                        offer.sold = True
-                                        shop_notice = f"{recruit.name}을(를) 동료로 영입했습니다."
-                                    elif offer.category == "upgrade" and offer.item_id:
-                                        coins -= offer.price
-                                        offer.sold = True
-                                        level_up_character_id = offer.item_id
-                                        level_up_stat = None
-                                        level_up_spinning = False
-                                        level_up_roll_range = (1, 9)
-                                        mode = "level_up"
-                                    elif offer.category == "relic" and offer.item_id:
-                                        if len(relic_ids) >= MAX_RELICS:
-                                            pending_relic_offer = offer
-                                            mode = "relic_replace"
-                                        else:
-                                            coins -= offer.price
-                                            relic_ids.append(offer.item_id)
-                                            offer.sold = True
-                                            shop_notice = f"{RELIC_BY_ID[offer.item_id].name}을(를) 획득했습니다."
-                                            refresh_shop_prices()
+                                purchase = shop.purchase(
+                                    offer_index,
+                                    coins,
+                                    campaign_roster,
+                                    relic_ids,
+                                    campaign_decks,
+                                )
+                                coins = purchase.coins
+                                if purchase.kind == "upgrade" and purchase.item_id:
+                                    level_up_character_id = purchase.item_id
+                                    level_up_stat = None
+                                    level_up_spinning = False
+                                    level_up_roll_range = (1, 9)
+                                    mode = "level_up"
+                                elif purchase.kind == "replace_relic" and purchase.offer:
+                                    pending_relic_offer = purchase.offer
+                                    mode = "relic_replace"
                     elif mode == "level_up":
                         selected_stat = screen.level_up_stat_at(x, y)
                         if selected_stat:
@@ -395,21 +358,12 @@ def main() -> None:
                         if screen.relic_replace_cancel_clicked(x, y):
                             pending_relic_offer = None
                             mode = "shop"
-                            shop_notice = "유물 교체를 취소했습니다."
+                            shop.notice = "유물 교체를 취소했습니다."
                         else:
                             relic_index = screen.relic_replace_at(x, y)
                             if relic_index is not None and pending_relic_offer and pending_relic_offer.item_id:
-                                if coins >= pending_relic_offer.price:
-                                    old_relic = relic_ids[relic_index]
-                                    new_relic = pending_relic_offer.item_id
-                                    coins -= pending_relic_offer.price
-                                    relic_ids[relic_index] = new_relic
-                                    pending_relic_offer.sold = True
-                                    refresh_shop_prices()
-                                    shop_notice = (
-                                        f"{RELIC_BY_ID[old_relic].name}을 버리고 "
-                                        f"{RELIC_BY_ID[new_relic].name}을 획득했습니다."
-                                    )
+                                coins = shop.replace_relic(relic_index, relic_ids, coins, pending_relic_offer)
+                                if pending_relic_offer.sold:
                                     pending_relic_offer = None
                                     mode = "shop"
             now = time.monotonic()
@@ -430,11 +384,11 @@ def main() -> None:
             elif mode == "shop":
                 screen.draw_shop(
                     coins,
-                    shop_offers,
+                    shop.offers,
                     campaign_roster,
                     relic_ids,
-                    shop_reroll_count * SHOP_REROLL_STEP,
-                    shop_notice,
+                    shop.next_reroll_cost,
+                    shop.notice,
                 )
             elif mode == "level_up_result" and level_up_result:
                 hero_name, stat_name, roll, before, after = level_up_result
