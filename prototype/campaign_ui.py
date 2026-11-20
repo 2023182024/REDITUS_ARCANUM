@@ -680,13 +680,16 @@ class CampaignScreen(BattleScreen):
         p2d.update_canvas()
 
     def draw_relic_replacement(
-        self, relic_ids: list[str], new_relic_id: str, coins: int, price: int
+        self, relic_ids: list[str], new_relic_id: str, coins: int, price: int,
+        is_reward: bool = False,
     ) -> None:
         self._clear_page()
         relic = RELIC_BY_ID[new_relic_id]
         self.panel(170, 185, 1100, 625, (20, 27, 41), GOLD)
-        self.text(720, 745, f"유물 보관 한도 · {relic.name} 획득", 27, GOLD, centered=True)
-        self.text(720, 701, f"보유 한도에 도달했습니다. 교체할 유물을 선택하세요.  ·  {price} 코인", 15, TEXT, centered=True)
+        title = f"유물 보상 · {relic.name}" if is_reward else f"유물 보관 한도 · {relic.name} 획득"
+        self.text(720, 745, title, 27, GOLD, centered=True)
+        instruction = "교체할 유물을 선택하세요. 교체는 무료입니다." if is_reward else f"보유 한도에 도달했습니다. 교체할 유물을 선택하세요.  ·  {price} 코인"
+        self.text(720, 701, instruction, 15, TEXT, centered=True)
         self.relic_replace_rects.clear()
         centers = (360, 720, 1080)
         for index, relic_id in enumerate(relic_ids):
@@ -700,7 +703,7 @@ class CampaignScreen(BattleScreen):
             self.text(center_x, bottom + 66, old_relic.name, 17, TEXT, centered=True)
             self.text(center_x, bottom + 34, textwrap.shorten(old_relic.description, width=28), 11, MUTED, centered=True)
         self.panel(*self.relic_replace_cancel_rect[:2], self.relic_replace_cancel_rect[2] - self.relic_replace_cancel_rect[0], self.relic_replace_cancel_rect[3] - self.relic_replace_cancel_rect[1], PANEL_LIGHT, LINE)
-        self.text(720, 176, "취소", 15, MUTED, centered=True)
+        self.text(720, 176, "보상 포기" if is_reward else "취소", 15, MUTED, centered=True)
         self.text(720, 110, f"보유 코인 {coins}", 14, GOLD, centered=True)
         p2d.update_canvas()
 

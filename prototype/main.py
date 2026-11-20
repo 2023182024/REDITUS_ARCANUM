@@ -13,6 +13,7 @@ from campaign import FloorOne, FloorTwo
 from campaign_economy import STARTING_COINS, ShopOffer, victory_coins
 from cards import MAX_DECK_SIZE, SkillCard, enemy_skills, player_reward_card, starter_deck
 from campaign_ui import CampaignScreen
+from relics import MAX_RELICS, RELICS
 from shop import ShopSession
 from units import CHARACTER_DATA, PlayerCharacter, create_party
 from ui import HEIGHT, SCALE_X, SCALE_Y, WIDTH
@@ -50,6 +51,7 @@ def main() -> None:
         pending_reward_card: SkillCard | None = None
         pending_reward_source: str | None = None
         pending_reward_target_id: str | None = None
+        pending_reward_relic_id: str | None = None
         card_replace_cursor = -1
         coins = STARTING_COINS
         relic_ids: list[str] = []
@@ -76,7 +78,8 @@ def main() -> None:
             nonlocal battle, active_node_id, mode, map_notice, map_notice_until
             nonlocal return_to_map_at, reward_options, reward_character_id, reward_cursor
             nonlocal reward_stage, reward_character_cursor, pending_reward_card
-            nonlocal pending_reward_source, pending_reward_target_id, card_replace_cursor
+            nonlocal pending_reward_source, pending_reward_target_id, pending_reward_relic_id
+            nonlocal card_replace_cursor
             if floor_map is None or active_node_id is None:
                 return
             completed_node = active_node_id
@@ -101,7 +104,29 @@ def main() -> None:
             pending_reward_card = None
             pending_reward_source = None
             pending_reward_target_id = None
+            pending_reward_relic_id = None
             card_replace_cursor = -1
+
+        def finish_map_reward(notice: str) -> None:
+            nonlocal active_node_id, mode, map_notice, map_notice_until
+            nonlocal reward_options, reward_character_id, reward_cursor, reward_stage
+            nonlocal reward_character_cursor, pending_reward_card, pending_reward_source
+            nonlocal pending_reward_relic_id
+            if floor_map is None or active_node_id is None:
+                return
+            floor_map.complete_node(active_node_id)
+            active_node_id = None
+            mode = "map"
+            map_notice = notice
+            map_notice_until = time.monotonic() + 4.0
+            reward_options = []
+            reward_character_id = None
+            reward_cursor = -1
+            reward_stage = "card"
+            reward_character_cursor = -1
+            pending_reward_card = None
+            pending_reward_source = None
+            pending_reward_relic_id = None
 
         def claim_reward(character_id: str, replace_index: int | None = None) -> None:
             nonlocal battle, active_node_id, mode, map_notice, map_notice_until
@@ -180,10 +205,41 @@ def main() -> None:
             nonlocal mode, active_node_id, reward_options, reward_character_id
             nonlocal reward_cursor, reward_stage, reward_character_cursor
             nonlocal pending_reward_card, pending_reward_source
-            nonlocal last_coin_reward
+            nonlocal last_coin_reward, pending_reward_relic_id
             if floor_map is None:
                 return
             active_node_id = node_id
+            reward_kind = random.choices(
+                ("card", "relic", "character"), weights=(75, 15, 10), k=1
+            )[0]
+            last_coin_reward = 0
+            if reward_kind == "relic":
+                available_relics = [relic.relic_id for relic in RELICS if relic.relic_id not in relic_ids]
+                if not available_relics:
+                    finish_map_reward("새로 획득할 유물이 없어 보상 없이 진행합니다.")
+                    return
+                pending_reward_relic_id = random.choice(available_relics)
+                if len(relic_ids) >= MAX_RELICS:
+                    mode = "reward_relic_replace"
+                    return
+                relic_ids.append(pending_reward_relic_id)
+                relic_name = next(relic.name for relic in RELICS if relic.relic_id == pending_reward_relic_id)
+                finish_map_reward(f"유물 획득 · {relic_name}")
+                return
+            if reward_kind == "character":
+                available_characters = [
+                    character_id for character_id in CHARACTER_DATA
+                    if character_id not in {hero.unit_id for hero in campaign_roster}
+                ]
+                if len(campaign_roster) >= 4 or not available_characters:
+                    finish_map_reward("영입 가능한 동료가 없어 캐릭터 보상을 받지 못했습니다.")
+                    return
+                recruit_id = random.choice(available_characters)
+                campaign_decks[recruit_id] = starter_deck(recruit_id)
+                recruit = create_party([recruit_id], campaign_decks)[0]
+                campaign_roster.append(recruit)
+                finish_map_reward(f"동료 영입 · {recruit.name}")
+                return
             reward_options = [
                 (source_name, skill)
                 for source_name, enemy_id in floor_map.reward_sources
@@ -197,7 +253,6 @@ def main() -> None:
             reward_character_cursor = -1
             pending_reward_card = None
             pending_reward_source = None
-            last_coin_reward = 0
             mode = "reward"
 
         def finish_level_up(roll: int) -> None:
@@ -273,6 +328,8 @@ def main() -> None:
                             pending_relic_offer = None
                             mode = "shop"
                             shop.notice = "유물 교체를 취소했습니다."
+                        elif mode == "reward_relic_replace":
+                            finish_map_reward("유물 교환을 포기했습니다.")
                         elif mode == "level_up":
                             pass
                         elif mode == "level_up_result":
@@ -510,6 +567,18 @@ def main() -> None:
                                 if pending_relic_offer.sold:
                                     pending_relic_offer = None
                                     mode = "shop"
+                    elif mode == "reward_relic_replace" and pending_reward_relic_id:
+                        if screen.relic_replace_cancel_clicked(x, y):
+                            finish_map_reward("유물 교환을 포기했습니다.")
+                        else:
+                            relic_index = screen.relic_replace_at(x, y)
+                            if relic_index is not None and relic_index < len(relic_ids):
+                                relic_ids[relic_index] = pending_reward_relic_id
+                                relic_name = next(
+                                    relic.name for relic in RELICS
+                                    if relic.relic_id == pending_reward_relic_id
+                                )
+                                finish_map_reward(f"유물 획득 · {relic_name}")
             now = time.monotonic()
             if mode == "title":
                 screen.draw_title()
@@ -559,6 +628,14 @@ def main() -> None:
                     pending_relic_offer.item_id,
                     coins,
                     pending_relic_offer.price,
+                )
+            elif mode == "reward_relic_replace" and pending_reward_relic_id:
+                screen.draw_relic_replacement(
+                    relic_ids,
+                    pending_reward_relic_id,
+                    coins,
+                    0,
+                    is_reward=True,
                 )
             elif mode == "battle" and battle:
                 battle.update(now)
