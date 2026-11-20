@@ -66,6 +66,43 @@ def main() -> None:
         reward_coins_paid = False
         running = True
 
+        def has_reward_recipient_with_room() -> bool:
+            return any(
+                len(campaign_decks.get(hero.unit_id, hero.deck)) < MAX_DECK_SIZE
+                for hero in campaign_roster
+            )
+
+        def abandon_card_reward() -> None:
+            nonlocal battle, active_node_id, mode, map_notice, map_notice_until
+            nonlocal return_to_map_at, reward_options, reward_character_id, reward_cursor
+            nonlocal reward_stage, reward_character_cursor, pending_reward_card
+            nonlocal pending_reward_source, pending_reward_target_id, card_replace_cursor
+            if floor_map is None or active_node_id is None:
+                return
+            completed_node = active_node_id
+            floor_map.complete_node(completed_node)
+            completed_kind = floor_map.nodes[completed_node].kind
+            if completed_kind == "boss":
+                mode = "complete"
+            else:
+                mode = "map"
+                map_notice = "카드 교환을 포기했습니다."
+                if completed_kind != "reward" and last_coin_reward:
+                    map_notice += f" · 코인 {last_coin_reward}개 획득"
+                map_notice_until = time.monotonic() + 4.0
+            battle = None
+            active_node_id = None
+            return_to_map_at = None
+            reward_options = []
+            reward_character_id = None
+            reward_cursor = -1
+            reward_stage = "card"
+            reward_character_cursor = -1
+            pending_reward_card = None
+            pending_reward_source = None
+            pending_reward_target_id = None
+            card_replace_cursor = -1
+
         def claim_reward(character_id: str, replace_index: int | None = None) -> None:
             nonlocal battle, active_node_id, mode, map_notice, map_notice_until
             nonlocal return_to_map_at, reward_options, reward_character_id, reward_cursor
@@ -227,8 +264,11 @@ def main() -> None:
                         elif mode == "shop":
                             leave_shop()
                         elif mode == "card_replace":
-                            pending_reward_target_id = None
-                            mode = "reward"
+                            if has_reward_recipient_with_room():
+                                pending_reward_target_id = None
+                                mode = "reward"
+                            else:
+                                abandon_card_reward()
                         elif mode == "relic_replace":
                             pending_relic_offer = None
                             mode = "shop"
@@ -403,8 +443,11 @@ def main() -> None:
                                 claim_reward(campaign_roster[character_index].unit_id)
                     elif mode == "card_replace" and pending_reward_target_id:
                         if screen.card_replace_cancel_clicked(x, y):
-                            pending_reward_target_id = None
-                            mode = "reward"
+                            if has_reward_recipient_with_room():
+                                pending_reward_target_id = None
+                                mode = "reward"
+                            else:
+                                abandon_card_reward()
                         else:
                             replace_index = screen.card_replace_at(x, y)
                             if replace_index is not None:
@@ -591,6 +634,7 @@ def main() -> None:
                         campaign_decks.get(pending_reward_target_id, []),
                         card_replace_cursor,
                         floor_map.floor_number if floor_map else 1,
+                        has_reward_recipient_with_room(),
                     )
             elif mode == "complete":
                 screen.draw_floor_complete(coins, floor_map.floor_number if floor_map else 1)

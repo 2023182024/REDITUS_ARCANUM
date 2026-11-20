@@ -479,6 +479,7 @@ class CampaignScreen(BattleScreen):
         deck_cards: list[SkillCard],
         cursor: int,
         floor_number: int = 1,
+        can_return_to_recipients: bool = True,
     ) -> None:
         self._clear_page()
         background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
@@ -524,8 +525,12 @@ class CampaignScreen(BattleScreen):
             self._draw_skill_card_face(hero, card, x + card_width / 2, y + card_height / 2, card_width / CARD_W)
 
         self.panel(*self.card_replace_cancel_rect[:2], self.card_replace_cancel_rect[2] - self.card_replace_cancel_rect[0], self.card_replace_cancel_rect[3] - self.card_replace_cancel_rect[1], PANEL_LIGHT, LINE)
-        self.text((self.card_replace_cancel_rect[0] + self.card_replace_cancel_rect[2]) / 2, 135, "취소", 15, MUTED, centered=True)
-        self.text(875, 112, "교체할 기존 카드를 클릭하세요", 13, MUTED, centered=True)
+        cancel_label = "뒤로가기" if can_return_to_recipients else "교환 포기"
+        self.text((self.card_replace_cancel_rect[0] + self.card_replace_cancel_rect[2]) / 2, 135, cancel_label, 15, MUTED, centered=True)
+        instruction = "교체할 기존 카드를 클릭하세요"
+        if not can_return_to_recipients:
+            instruction += " · 또는 교환 포기"
+        self.text(875, 112, instruction, 13, MUTED, centered=True)
         p2d.update_canvas()
 
     def card_replace_at(self, x: int, y: int) -> int | None:
