@@ -102,20 +102,20 @@ class FloorTwo:
     )
 
     def __init__(self) -> None:
-        left, center, right = 430, 865, 1300
+        left, center, right = 625, 865, 1105
         self.nodes = {
             "entrance2": MapNode("entrance2", "시작", "start", center, 145, ("battle_a",), unlocked=True, cleared=True),
-            "battle_a": MapNode("battle_a", "서고 진입로", "battle", right, 215, ("elite_a", "battle_b"), unlocked=True, encounter_id="floor2_battle_a"),
-            "elite_a": MapNode("elite_a", "가시의 방", "elite", left, 285, ("reward_a",), encounter_id="floor2_elite_a"),
-            "battle_b": MapNode("battle_b", "봉인 회랑", "battle", right, 285, ("reward_a", "shop_a"), encounter_id="floor2_battle_b"),
-            "reward_a": MapNode("reward_a", "기록 보관함", "reward", left, 355, ("elite_b",)),
-            "shop_a": MapNode("shop_a", "기록 상점", "shop", right, 355, ("elite_b",)),
-            "elite_b": MapNode("elite_b", "룬의 방", "elite", center, 425, ("battle_c", "reward_b"), encounter_id="floor2_elite_b"),
-            "battle_c": MapNode("battle_c", "서리 서고", "battle", left, 495, ("shop_b",), encounter_id="floor2_battle_c"),
-            "reward_b": MapNode("reward_b", "봉인 해제", "reward", right, 495, ("elite_c",)),
-            "elite_c": MapNode("elite_c", "망각의 방", "elite", right, 565, ("shop_b",), encounter_id="floor2_elite_c"),
-            "shop_b": MapNode("shop_b", "마지막 상점", "shop", center, 705, ("boss2",)),
-            "boss2": MapNode("boss2", "기록의 관리자", "boss", center, 775, encounter_id="floor2_boss"),
+            "battle_a": MapNode("battle_a", "서고 진입로", "battle", center, 310, ("elite_a", "battle_b"), unlocked=True, encounter_id="floor2_battle_a"),
+            "elite_a": MapNode("elite_a", "가시의 방", "elite", left, 475, ("reward_a",), encounter_id="floor2_elite_a"),
+            "battle_b": MapNode("battle_b", "봉인 회랑", "battle", right, 475, ("shop_a",), encounter_id="floor2_battle_b"),
+            "reward_a": MapNode("reward_a", "기록 보관함", "reward", left, 640, ("elite_b",)),
+            "shop_a": MapNode("shop_a", "기록 상점", "shop", right, 640, ("elite_b",)),
+            "elite_b": MapNode("elite_b", "룬의 방", "elite", center, 805, ("battle_c", "reward_b"), encounter_id="floor2_elite_b"),
+            "battle_c": MapNode("battle_c", "서리 서고", "battle", left, 1052, ("shop_b",), encounter_id="floor2_battle_c"),
+            "reward_b": MapNode("reward_b", "봉인 해제", "reward", right, 970, ("elite_c",)),
+            "elite_c": MapNode("elite_c", "망각의 방", "elite", right, 1135, ("shop_b",), encounter_id="floor2_elite_c"),
+            "shop_b": MapNode("shop_b", "마지막 상점", "shop", center, 1300, ("boss2",)),
+            "boss2": MapNode("boss2", "기록의 관리자", "boss", center, 1465, encounter_id="floor2_boss"),
         }
         self.is_complete = False
 

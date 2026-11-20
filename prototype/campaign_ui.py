@@ -23,6 +23,7 @@ class CampaignScreen(BattleScreen):
         self.character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
+        self.map_viewport = (330, 80, 1410, 830)
         self.deck_preview_character_id: str | None = None
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
         self.reward_choice_rects: list[tuple[int, int, int, int]] = []
@@ -85,6 +86,7 @@ class CampaignScreen(BattleScreen):
         coins: int = 0,
         party: list[PlayerCharacter] | None = None,
         relic_ids: list[str] | None = None,
+        scroll_y: int = 0,
     ) -> None:
         self._clear_page()
         self.map_node_rects.clear()
@@ -98,15 +100,26 @@ class CampaignScreen(BattleScreen):
         self.text((self.map_restart_rect[0] + self.map_restart_rect[2]) / 2, 889, "처음으로", 13, MUTED, centered=True)
 
         self._draw_route_panel(character_id, party, floor_map.floor_number)
+        use_scroll = floor_map.floor_number >= 2
+        visible_nodes = {
+            node.node_id
+            for node in floor_map.nodes.values()
+            if not use_scroll or self._map_node_visible(node, scroll_y)
+        }
         for source_id, target_id in floor_map.edges:
+            if source_id not in visible_nodes or target_id not in visible_nodes:
+                continue
             source = floor_map.nodes[source_id]
             target = floor_map.nodes[target_id]
             color = (107, 99, 76) if source.cleared or target.unlocked else (49, 57, 71)
-            self.line(source.x, source.y, target.x, target.y, color)
+            self.line(source.x, source.y - scroll_y, target.x, target.y - scroll_y, color)
         for node in floor_map.nodes.values():
-            self._draw_map_node(node, compact=floor_map.floor_number >= 2)
+            if node.node_id in visible_nodes:
+                self._draw_map_node(node, y_offset=scroll_y if use_scroll else 0)
 
-        self.text(875, 91, "진행 가능한 노드를 선택하세요", 14, MUTED, centered=True)
+        hint_y = 48 if use_scroll else 91
+        hint = "마우스 휠로 맵 이동 · 진행 가능한 노드를 선택하세요" if use_scroll else "진행 가능한 노드를 선택하세요"
+        self.text(875, hint_y, hint, 14, MUTED, centered=True)
         if notice:
             self.panel(510, 842, 730, 38, (50, 45, 39), GOLD)
             self.text(875, 861, notice[:62], 13, GOLD, centered=True)
@@ -156,7 +169,18 @@ class CampaignScreen(BattleScreen):
         self.text(58, 87, f"층 진행  {floor_number} / 2", 13, GOLD)
         self.text(58, 66, "현재 프로토타입은 2층까지", 9, MUTED)
 
-    def _draw_map_node(self, node, compact: bool = False) -> None:
+    def _map_node_visible(self, node, scroll_y: int = 0) -> bool:
+        half_height = 39 if node.kind == "start" else 54
+        y = node.y - scroll_y
+        return self.map_viewport[1] + half_height <= y <= self.map_viewport[3] - half_height
+
+    def max_map_scroll(self, floor_map: FloorOne | FloorTwo) -> int:
+        if floor_map.floor_number < 2:
+            return 0
+        highest_node = max(node.y + (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
+        return max(0, highest_node - self.map_viewport[3])
+
+    def _draw_map_node(self, node, compact: bool = False, y_offset: int = 0) -> None:
         if compact:
             w, h = 190, 56
             accent = {
@@ -179,7 +203,8 @@ class CampaignScreen(BattleScreen):
                 "reward": (112, 211, 178),
                 "boss": GOLD,
             }[node.kind]
-        rect = (node.x - w // 2, node.y - h // 2, node.x + w // 2, node.y + h // 2)
+        drawn_y = node.y - y_offset
+        rect = (node.x - w // 2, drawn_y - h // 2, node.x + w // 2, drawn_y + h // 2)
         self.map_node_rects[node.node_id] = rect
         state = node.state
         edge = GOLD if state == "available" else (97, 143, 118) if state == "cleared" else LINE
@@ -189,7 +214,7 @@ class CampaignScreen(BattleScreen):
         status_offset = -12 if compact else -15
         title_size = 15 if compact else (19 if node.kind != "start" else 16)
         status_size = 11 if compact else 13
-        self.text(node.x, node.y + title_offset, node.title, title_size, accent if state != "locked" else MUTED, centered=True)
+        self.text(node.x, drawn_y + title_offset, node.title, title_size, accent if state != "locked" else MUTED, centered=True)
         if node.kind == "start":
             status = "시작"
         elif node.kind == "shop":
@@ -200,7 +225,7 @@ class CampaignScreen(BattleScreen):
             kind_label = {"battle": "전투", "elite": "정예", "boss": "층 보스"}[node.kind]
             status_label = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
             status = f"{kind_label}  ·  {status_label}"
-        self.text(node.x, node.y + status_offset, status, status_size, GOLD if state == "available" else MUTED, centered=True)
+        self.text(node.x, drawn_y + status_offset, status, status_size, GOLD if state == "available" else MUTED, centered=True)
 
     def _draw_deck_preview(self, character_id: str, deck_cards: list[SkillCard] | None) -> None:
         data = character_info(character_id)

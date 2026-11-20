@@ -32,6 +32,7 @@ def main() -> None:
         offers: list[str] = []
         selected_character_id: str | None = None
         floor_map: FloorOne | FloorTwo | None = None
+        map_scroll_y = 0
         battle: Battle | None = None
         active_node_id: str | None = None
         return_to_map_at: float | None = None
@@ -220,6 +221,7 @@ def main() -> None:
                             running = False
                     elif mode == "select" and event.key == p2d.SDLK_RETURN and selected_character_id:
                         floor_map = FloorOne()
+                        map_scroll_y = 0
                         mode = "map"
                     elif mode == "battle" and battle:
                         screen.handle_key(battle, event.key)
@@ -229,6 +231,12 @@ def main() -> None:
                         confirm_level_up_result()
                 elif event.type == p2d.SDL_KEYUP and mode == "battle" and battle:
                     screen.handle_key_up(battle, event.key)
+                elif event.type == getattr(p2d, "SDL_MOUSEWHEEL", -1) and mode == "map" and floor_map:
+                    wheel_y = getattr(event, "y", 0)
+                    map_scroll_y = max(
+                        0,
+                        min(screen.max_map_scroll(floor_map), map_scroll_y + wheel_y * 120),
+                    )
                 elif event.type == p2d.SDL_MOUSEMOTION:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -263,6 +271,7 @@ def main() -> None:
                             campaign_roster.clear()
                         elif screen.confirm_selection_clicked(x, y) and selected_character_id:
                             floor_map = FloorOne()
+                            map_scroll_y = 0
                             mode = "map"
                     elif mode == "map" and floor_map and selected_character_id:
                         if screen.deck_preview_character_id:
@@ -319,6 +328,7 @@ def main() -> None:
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         if floor_map and floor_map.floor_number == 1:
                             floor_map = FloorTwo()
+                            map_scroll_y = 0
                             mode = "map"
                             map_notice = "2층 · 망각의 서고에 진입했습니다."
                             map_notice_until = time.monotonic() + 4.0
@@ -414,6 +424,7 @@ def main() -> None:
                     coins=coins,
                     party=campaign_roster,
                     relic_ids=relic_ids,
+                    scroll_y=map_scroll_y,
                 )
             elif mode == "shop":
                 screen.draw_shop(
