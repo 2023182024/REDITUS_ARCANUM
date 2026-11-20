@@ -416,6 +416,8 @@ def main() -> None:
                             hover_index = screen.reward_character_at(x, y)
                             reward_character_cursor = hover_index if hover_index is not None else -1
                 elif event.type == p2d.SDL_MOUSEBUTTONUP and event.button == p2d.SDL_BUTTON_LEFT:
+                    if mode == "battle" and battle:
+                        screen.handle_mouse_release(battle, round(event.x / SCALE_X))
                     map_scroll_dragging = False
                     if mode == "map" and floor_map and map_pan:
                         x = round(event.x / SCALE_X)

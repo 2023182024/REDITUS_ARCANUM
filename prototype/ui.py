@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pico2d as p2d
 
-from battle import Battle
+from battle import Battle, TurnEntry
 from cards import SkillCard
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import Enemy, PlayerCharacter
@@ -51,6 +51,10 @@ ATTACK_SPRITE_VISIBLE_HEIGHT_RATIO = 0.89
 TIMING_CENTER_X = 800
 TIMING_PANEL_RECT = (534, 455, 532, 190)
 TIMING_GAUGE_X = TIMING_CENTER_X - 200
+ORDER_BOX = (28, 864, 1412, 940)  # left, bottom, right, top
+ORDER_LIST_LEFT, ORDER_LIST_RIGHT = 248, ORDER_BOX[2] - 14
+ORDER_ITEM_WIDTH, ORDER_ITEM_GAP = 164, 19
+ORDER_ITEM_STEP = ORDER_ITEM_WIDTH + ORDER_ITEM_GAP
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -181,6 +185,9 @@ class BattleScreen:
             str(asset_root / "images" / "card_art" / "attack.png")
         )
         self.action_cursor = 0
+        self.order_focus_entry: TurnEntry | None = None
+        self.order_scroll_x = 0
+        self.order_drag_x: int | None = None
         self.target_enemy_id: str | None = None
         self.focus_actor_id: str | None = None
         self.focus_round: int | None = None
@@ -286,7 +293,6 @@ class BattleScreen:
         p2d.clear_canvas()
         background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
         background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
-        self._draw_header(battle, floor_number)
         self._draw_order(battle)
         self._draw_battlefield(battle, now, floor_number)
         self._draw_relic_list(battle)
@@ -296,13 +302,6 @@ class BattleScreen:
         self._draw_returning_card_motions(battle, now)
         self._draw_keyword_tooltip()
         p2d.update_canvas()
-
-    def _draw_header(self, battle: Battle, floor_number: int = 1) -> None:
-        self.text(30, 922, "REDITUS ARCANUM", 34, TEXT)
-        self.text(1214, 925, f"TURN  {battle.round:02d}", 22, GOLD)
-        self.text(1215, 894, f"{floor_number}층  ·  BATTLE STAGE", 14, MUTED)
-        if battle.encounter_id == "floor2_boss" and battle.round == 1:
-            self.text(1215, 869, "보스 2회 행동", 13, CORAL)
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
@@ -540,33 +539,74 @@ class BattleScreen:
             center_x, center_y, visual_scale, _ = self._card_motion_value(motion, now)
             self._draw_skill_card_face(hero, motion.card, center_x, center_y, visual_scale)
 
+    def _sync_order_scroll(self, battle: Battle) -> int:
+        visible_width = ORDER_LIST_RIGHT - ORDER_LIST_LEFT
+        content_width = len(battle.order) * ORDER_ITEM_STEP - ORDER_ITEM_GAP
+        maximum = max(0, content_width - visible_width)
+        current = battle.order[battle.order_index] if 0 <= battle.order_index < len(battle.order) else None
+        # Each action has its own entry, including consecutive actions by the same unit.
+        if current is not self.order_focus_entry:
+            self.order_focus_entry = current
+            self.order_scroll_x = battle.order_index * ORDER_ITEM_STEP if current else 0
+            self.order_drag_x = None
+        self.order_scroll_x = min(maximum, self.order_scroll_x)
+        return maximum
+
     def _draw_order(self, battle: Battle) -> None:
-        self.panel(28, 789, 1384, 75, PANEL)
-        self.text(45, 842, "행동 순서", 16, GOLD)
-        start_x = 262
-        step = 183
-        for index, entry in enumerate(battle.order):
-            actor = entry.actor
-            x = start_x + index * step
-            active = index == battle.order_index and battle.phase not in ("victory", "defeat")
-            border = GOLD if active else LINE
-            fill = (58, 51, 42) if active else PANEL_LIGHT
-            self.panel(x, 804, 164, 45, fill, border)
-            color = actor.accent if actor.alive else MUTED
-            label = actor.name.split(" · ", 1)[0] if actor.side == "player" else actor.name[:4]
-            if entry.actions_this_round > 1:
-                short_name = actor.name.split(" ", 1)[0]
-                label = f"{short_name} {entry.action_number}/{entry.actions_this_round}"
-            self.text(x + 11, 832, label, 14, color)
-            self.text(x + 11, 813, f"SPD {actor.effective_speed()}", 12, MUTED)
-            self.text(x + 133, 825, f"d{entry.die}", 12, GOLD if active else MUTED, centered=True)
-            if not actor.alive:
-                self.rect(x + 1, 805, 162, 43, INK)
-                self.text(x + 82, 825, "DOWN", 12, MUTED, centered=True)
+        left, bottom, right, top = ORDER_BOX
+        maximum = self._sync_order_scroll(battle)
+        middle = (bottom + top) // 2
+        self.panel(left, bottom, right - left, top - bottom)
+        self.text(left + 48, middle, f"{battle.round}턴", 24, GOLD, centered=True)
+        self.line(left + 96, bottom + 12, left + 96, top - 12, LINE)
+        boss_double = battle.encounter_id == "floor2_boss" and battle.round == 1
+        self.text(184, middle + (10 if boss_double else 0), "행동 순서", 18, TEXT, centered=True)
+        if boss_double:
+            self.text(184, middle - 14, "보스 2회 행동", 13, CORAL, centered=True)
+
+        lane_width = ORDER_LIST_RIGHT - ORDER_LIST_LEFT
+        clip = p2d.SDL_Rect(
+            round(ORDER_LIST_LEFT * SCALE_X), HEIGHT - round(top * SCALE_Y),
+            round(ORDER_LIST_RIGHT * SCALE_X) - round(ORDER_LIST_LEFT * SCALE_X),
+            round(top * SCALE_Y) - round(bottom * SCALE_Y),
+        )
+        renderer = p2d.pico2d.renderer
+        p2d.SDL_RenderSetClipRect(renderer, clip)
+        try:
+            for index, entry in enumerate(battle.order):
+                x = ORDER_LIST_LEFT + index * ORDER_ITEM_STEP - self.order_scroll_x
+                if x >= ORDER_LIST_RIGHT:
+                    break
+                if x + ORDER_ITEM_WIDTH > ORDER_LIST_LEFT:
+                    active = index == battle.order_index and battle.phase not in ("victory", "defeat")
+                    self._draw_order_entry(entry, x, middle - 22, active)
+        finally:
+            p2d.SDL_RenderSetClipRect(renderer, None)
+
+        if maximum:
+            thumb_w = round(lane_width * lane_width / (lane_width + maximum))
+            thumb_x = ORDER_LIST_LEFT + round(self.order_scroll_x / maximum * (lane_width - thumb_w))
+            self.rect(ORDER_LIST_LEFT, bottom + 6, lane_width, 2, LINE)
+            self.rect(thumb_x, bottom + 6, thumb_w, 2, MUTED)
+
+    def _draw_order_entry(self, entry: TurnEntry, x: int, y: int, active: bool) -> None:
+        actor = entry.actor
+        self.panel(x, y, ORDER_ITEM_WIDTH, 45, (58, 51, 42) if active else PANEL_LIGHT, GOLD if active else LINE)
+        if not actor.alive:
+            self.rect(x + 1, y + 1, ORDER_ITEM_WIDTH - 2, 43, INK)
+            self.text(x + ORDER_ITEM_WIDTH // 2, y + 22, "DOWN", 12, MUTED, centered=True)
+            return
+        label = actor.name.split(" · ", 1)[0] if actor.side == "player" else actor.name[:4]
+        if entry.actions_this_round > 1:
+            label = f"{actor.name.split(' ', 1)[0]} {entry.action_number}/{entry.actions_this_round}"
+        self.text(x + 11, y + 28, label, 14, actor.accent)
+        self.text(x + 11, y + 9, f"SPD {actor.effective_speed()}", 12, MUTED)
+        self.text(x + 133, y + 22, f"d{entry.die}", 12, GOLD if active else MUTED, centered=True)
 
     def _draw_battlefield(self, battle: Battle, now: float, floor_number: int = 1) -> None:
-        self.rect(28, 0, 1384, 778, (54, 66, 86), filled=False)
-        self.text(48, 760, "전투", 16, MUTED)
+        field_top = ORDER_BOX[1] - 11
+        self.rect(28, 0, 1384, field_top, (54, 66, 86), filled=False)
+        self.text(48, field_top - 20, f"{floor_number}층 · 전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
 
         self.party_display_positions = self._party_display_positions(battle)
@@ -1230,9 +1270,26 @@ class BattleScreen:
             self.text(center_x, rest[1] + 113 * CARD_LAYOUT_SCALE, "휴식", round(18 * CARD_LAYOUT_SCALE), GOLD if rest_focused else TEXT, centered=True)
             self.text(center_x, rest[1] + 77 * CARD_LAYOUT_SCALE, "카드 보충", round(12 * CARD_LAYOUT_SCALE), MUTED, centered=True)
 
+    def _drag_order_to(self, battle: Battle, x: int) -> None:
+        maximum = self._sync_order_scroll(battle)
+        if self.order_drag_x is not None:
+            self.order_scroll_x = max(0, min(maximum, self.order_scroll_x + self.order_drag_x - x))
+            self.order_drag_x = x
+
+    def handle_mouse_release(self, battle: Battle, x: int) -> None:
+        if self.order_drag_x is not None:
+            self._drag_order_to(battle, x)
+            self.order_drag_x = None
+
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
         """Use pointer hover to focus cards or the nearest living enemy."""
         self.mouse_position = (x, y)
+        if self.order_drag_x is not None:
+            self._drag_order_to(battle, x)
+            return
+        if self._inside(x, y, ORDER_BOX):
+            self.hovered_card_index = None
+            return
         if battle.phase != "player" or not battle.active:
             self.hovered_card_index = None
             return
@@ -1264,6 +1321,12 @@ class BattleScreen:
 
     def handle_mouse_click(self, battle: Battle, x: int, y: int) -> None:
         """Handle mouse selection and targeting."""
+        self.order_drag_x = None
+        if self._inside(x, y, ORDER_BOX):
+            if ORDER_LIST_LEFT <= x <= ORDER_LIST_RIGHT and self._sync_order_scroll(battle) > 0:
+                self.order_drag_x = x
+            self.hovered_card_index = None
+            return
         self._sync_focus(battle)
         if battle.phase in ("attack_timing", "defense_timing", "hold_wait", "hold_timing", "multi_hit_pause"):
             return
