@@ -154,6 +154,34 @@ def enemy_skills(enemy_id: str) -> list[SkillCard]:
     }
     if enemy_id in floor_two_skills:
         return floor_two_skills[enemy_id]
+    if enemy_id == "glass_warden":
+        return [
+            SkillCard(
+                "유리 가시 폭우",
+                "방어 실패 시 출혈",
+                0.9,
+                1.2,
+                status_key="bleed",
+                status_amount=6,
+                status_turns=2,
+            ),
+            SkillCard(
+                "거울 분쇄",
+                "느리고 강한 공격 · 방어 실패 시 취약",
+                1.12,
+                0.95,
+                status_key="vulnerable",
+                status_amount=0.18,
+            ),
+            SkillCard(
+                "결정 속박",
+                "빠른 공격 · 방어 실패 시 강박",
+                0.82,
+                1.35,
+                status_key="rest_lock",
+                status_turns=2,
+            ),
+        ]
     if enemy_id == "floor1_guardian":
         return [
             SkillCard("회랑 강타", "무거운 보스 공격", 1.28, 0.82),

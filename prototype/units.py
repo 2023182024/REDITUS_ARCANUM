@@ -210,7 +210,7 @@ def create_enemies(encounter_id: str = "corridor") -> list[Enemy]:
                 attack=20,
                 speed=106,
                 accent=(232, 170, 83),
-                skills=enemy_skills("ash_hound"),
+                skills=enemy_skills("glass_warden"),
             )
         ]
     if encounter_id == "floor1_boss":
