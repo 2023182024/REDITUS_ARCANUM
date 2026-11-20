@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import time
 import textwrap
@@ -31,6 +30,7 @@ CARD_POSITIONS = tuple(
 )
 REST_RECT = (625 + HAND_OFFSET_X, 10, 625 + HAND_OFFSET_X + CARD_W, 10 + CARD_H)
 ENEMY_POSITIONS = ((1270, 585), (1270, 335))
+ENEMY_FOOT_OFFSET = 72
 PARTY_POSITIONS = ((230, 690), (230, 510), (230, 330), (230, 150))
 TURN_FOCUS_CENTER = (410, DESIGN_HEIGHT // 2)
 TURN_FOCUS_SCALE = 2.0
@@ -133,6 +133,12 @@ class BattleScreen:
         }
         self.textures: dict[tuple[str, tuple[int, int, int], tuple[int, bool, int]], p2d.Image] = {}
         self.portraits: dict[str, p2d.Image] = {}
+        self.enemy_sprites: dict[str, tuple[p2d.Image, int, int]] = {}
+        for rank, max_width, max_height in (("normal", 204, 146), ("elite", 224, 190), ("boss", 246, 218)):
+            for path in (asset_root / "images" / "enemies" / rank).glob("*.png"):
+                sprite = p2d.load_image(str(path))
+                scale = min(max_width / sprite.w, max_height / sprite.h)
+                self.enemy_sprites[path.stem] = (sprite, round(sprite.w * scale), round(sprite.h * scale))
         for character_id in "ABCD":
             path = asset_root / "images" / "characters_5x" / f"{character_id}.png"
             self.portraits[character_id] = p2d.load_image(str(path))
@@ -832,21 +838,15 @@ class BattleScreen:
             and battle.phase in ("attack_timing", "hold_wait", "hold_timing", "multi_hit_pause", "result")
         )
         target = target or (enemy is battle.incoming_source and battle.phase == "enemy_skill_reveal")
-        radius_color = GOLD if target else enemy.accent
         if not enemy.alive:
             self.circle(x, y, 40, (72, 68, 81), filled=True)
             self.text(x, y, "DOWN", 14, MUTED, centered=True)
         else:
-            self.circle(x, y, 65, radius_color, filled=False)
-            self.circle(x, y, 52, (46, 40, 63), filled=True)
-            self.circle(x, y, 36, enemy.accent, filled=True)
-            self.circle(x, y, 25, (31, 25, 45), filled=True)
-            self.circle(x, y, 14, (232, 203, 238), filled=True)
-            for spoke in range(8):
-                angle = spoke * 0.785398
-                dx, dy = int(70 * math.cos(angle)), int(70 * math.sin(angle))
-                self.line(x + dx, y + dy, x + int(dx * 1.22), y + int(dy * 1.22), enemy.accent)
-        self.text(x, y - 92, enemy.name, 18, TEXT, centered=True)
+            sprite, width, height = self.enemy_sprites[enemy.unit_id]
+            if target:
+                self.circle(x, y, 65, GOLD)
+            self.image(sprite, x, y - ENEMY_FOOT_OFFSET + height // 2, width, height)
+        self.text(x, y - 92, enemy.name, 18, GOLD if target and enemy.alive else TEXT, centered=True)
         self._bar(x - 66, y - 113, 132, 9, enemy.hp / enemy.max_hp, CORAL)
         self.text(x, y - 136, f"HP {enemy.hp}/{enemy.max_hp} · ATK {enemy.attack} · SPD {enemy.speed}", 11, MUTED, centered=True)
         for i, effect in enumerate(enemy.statuses.snapshot()[:2]):
@@ -1418,7 +1418,9 @@ class BattleScreen:
 
     def _inside_enemy_area(self, battle: Battle, enemy: Enemy, x: int, y: int) -> bool:
         enemy_x, enemy_y = self._enemy_position(battle, enemy)
-        return abs(x - enemy_x) <= 110 and enemy_y - 180 <= y <= enemy_y + 85
+        _, _, height = self.enemy_sprites[enemy.unit_id]
+        top = enemy_y + max(85, height - ENEMY_FOOT_OFFSET)
+        return abs(x - enemy_x) <= 110 and enemy_y - 180 <= y <= top
 
     def _sync_focus(self, battle: Battle) -> None:
         if battle.phase == "round_intro":
