@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import textwrap
+from dataclasses import dataclass
 
 from campaign import FloorOne, FloorTwo
 from campaign_economy import ShopOffer
@@ -12,6 +13,24 @@ from units import PlayerCharacter, character_info
 from ui import BattleScreen, CARD_W, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE, CORAL
 
 import pico2d as p2d
+
+
+@dataclass
+class MapPan:
+    start_x: int
+    start_y: int
+    pressed_node: str | None
+    last_drag_y: int | None = None
+
+    def move(self, x: int, y: int, scroll_y: int, maximum: int) -> int:
+        previous_y = self.last_drag_y
+        if previous_y is None:
+            # Allow small movements while clicking a node.
+            if max(abs(x - self.start_x), abs(y - self.start_y)) < 8:
+                return scroll_y
+            previous_y = self.start_y
+        self.last_drag_y = y
+        return max(0, min(maximum, scroll_y + previous_y - y))
 
 
 class CampaignScreen(BattleScreen):
@@ -123,7 +142,7 @@ class CampaignScreen(BattleScreen):
         self._draw_map_scrollbar(floor_map, scroll_y)
 
         hint_y = 48 if use_scroll else 91
-        hint = "마우스 휠로 맵 이동 · 진행 가능한 노드를 선택하세요" if use_scroll else "진행 가능한 노드를 선택하세요"
+        hint = "휠 또는 왼쪽 버튼 드래그로 지도 이동 · 진행 가능한 노드를 선택하세요" if use_scroll else "진행 가능한 노드를 선택하세요"
         self.text(875, hint_y, hint, 14, MUTED, centered=True)
         if notice:
             self.panel(510, 842, 730, 38, (50, 45, 39), GOLD)
@@ -202,6 +221,9 @@ class CampaignScreen(BattleScreen):
         self.panel(x0, y0, x1 - x0, track_height, PANEL, LINE)
         self.map_scrollbar_thumb_rect = (x0, thumb_bottom, x1, thumb_bottom + thumb_height)
         self.panel(x0 + 2, thumb_bottom, x1 - x0 - 4, thumb_height, (91, 113, 142), GOLD)
+
+    def can_pan_map_at(self, x: int, y: int, floor_map: FloorOne | FloorTwo) -> bool:
+        return self._inside(x, y, self.map_viewport) and self.max_map_scroll(floor_map) > 0
 
     def map_scrollbar_thumb_at(self, x: int, y: int) -> bool:
         return self.map_scrollbar_thumb_rect is not None and self._inside(x, y, self.map_scrollbar_thumb_rect)

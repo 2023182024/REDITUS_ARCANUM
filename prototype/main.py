@@ -12,7 +12,7 @@ from battle import Battle
 from campaign import FloorOne, FloorTwo
 from campaign_economy import STARTING_COINS, ShopOffer, victory_coins
 from cards import MAX_DECK_SIZE, SkillCard, enemy_skills, player_reward_card, starter_deck
-from campaign_ui import CampaignScreen
+from campaign_ui import CampaignScreen, MapPan
 from relics import MAX_RELICS, RELICS
 from shop import ShopSession
 from units import CHARACTER_DATA, PlayerCharacter, create_party
@@ -36,6 +36,7 @@ def main() -> None:
         map_scroll_y = 0
         map_scroll_dragging = False
         map_scroll_drag_offset = 0
+        map_pan: MapPan | None = None
         battle: Battle | None = None
         active_node_id: str | None = None
         return_to_map_at: float | None = None
@@ -255,6 +256,35 @@ def main() -> None:
             pending_reward_source = None
             mode = "reward"
 
+        def enter_map_node(node_id: str) -> None:
+            nonlocal active_node_id, battle, campaign_roster, mode, pending_relic_offer
+            nonlocal return_to_map_at, defeat_return_at, reward_coins_paid
+            node = floor_map.nodes[node_id]
+            if node.kind in ("shop", "reward") and not campaign_roster:
+                campaign_roster = create_party([selected_character_id], campaign_decks)
+            if node.kind == "shop":
+                active_node_id = node_id
+                shop.enter(campaign_roster, relic_ids)
+                pending_relic_offer = None
+                mode = "shop"
+            elif node.kind == "reward":
+                begin_map_reward(node_id)
+            elif node.kind in ("battle", "elite", "boss"):
+                encounter = node.encounter_id or "corridor"
+                if campaign_roster:
+                    battle = Battle(
+                        encounter_id=encounter, decks=campaign_decks,
+                        relic_ids=relic_ids, roster=campaign_roster,
+                    )
+                else:
+                    battle = Battle([selected_character_id], encounter, decks=campaign_decks, relic_ids=relic_ids)
+                    campaign_roster = battle.party
+                active_node_id = node_id
+                return_to_map_at = None
+                defeat_return_at = None
+                reward_coins_paid = False
+                mode = "battle"
+
         def finish_level_up(roll: int) -> None:
             nonlocal mode, level_up_character_id, level_up_stat, level_up_spinning
             nonlocal level_up_roll_range, level_up_result
@@ -335,6 +365,8 @@ def main() -> None:
                         elif mode == "level_up_result":
                             pass
                         elif mode in ("select", "map", "complete"):
+                            map_pan = None
+                            map_scroll_dragging = False
                             if mode == "map" and screen.deck_preview_character_id:
                                 screen.close_deck_preview()
                             else:
@@ -355,6 +387,8 @@ def main() -> None:
                 elif event.type == p2d.SDL_KEYUP and mode == "battle" and battle:
                     screen.handle_key_up(battle, event.key)
                 elif event.type == getattr(p2d, "SDL_MOUSEWHEEL", -1) and mode == "map" and floor_map:
+                    if map_pan or map_scroll_dragging or screen.deck_preview_character_id:
+                        continue
                     wheel_y = getattr(event, "y", 0)
                     map_scroll_y = max(
                         0,
@@ -367,6 +401,8 @@ def main() -> None:
                         map_scroll_y = screen.map_scroll_from_thumb_bottom(
                             y - map_scroll_drag_offset, floor_map
                         )
+                    elif mode == "map" and floor_map and map_pan:
+                        map_scroll_y = map_pan.move(x, y, map_scroll_y, screen.max_map_scroll(floor_map))
                     elif mode == "battle" and battle:
                         screen.handle_mouse_move(battle, x, y)
                     elif mode == "card_replace":
@@ -381,7 +417,20 @@ def main() -> None:
                             reward_character_cursor = hover_index if hover_index is not None else -1
                 elif event.type == p2d.SDL_MOUSEBUTTONUP and event.button == p2d.SDL_BUTTON_LEFT:
                     map_scroll_dragging = False
+                    if mode == "map" and floor_map and map_pan:
+                        x = round(event.x / SCALE_X)
+                        y = round((HEIGHT - event.y) / SCALE_Y)
+                        map_scroll_y = map_pan.move(x, y, map_scroll_y, screen.max_map_scroll(floor_map))
+                        if (
+                            map_pan.last_drag_y is None
+                            and map_pan.pressed_node
+                            and screen.map_node_at(x, y, floor_map) == map_pan.pressed_node
+                        ):
+                            enter_map_node(map_pan.pressed_node)
+                    map_pan = None
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
+                    map_pan = None
+                    map_scroll_dragging = False
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
                     if mode == "title" and screen.title_start_clicked(x, y):
@@ -406,10 +455,10 @@ def main() -> None:
                             map_scroll_y = 0
                             mode = "map"
                     elif mode == "map" and floor_map and selected_character_id:
-                        if screen.map_scrollbar_thumb_at(x, y):
+                        if not screen.deck_preview_character_id and screen.map_scrollbar_thumb_at(x, y):
                             map_scroll_dragging = True
                             map_scroll_drag_offset = screen.map_scrollbar_drag_offset(y)
-                        elif screen.map_scrollbar_track_at(x, y):
+                        elif not screen.deck_preview_character_id and screen.map_scrollbar_track_at(x, y):
                             thumb = screen.map_scrollbar_thumb_rect
                             if thumb:
                                 thumb_height = thumb[3] - thumb[1]
@@ -434,40 +483,10 @@ def main() -> None:
                                 screen.toggle_deck_preview(clicked_character)
                             else:
                                 node_id = screen.map_node_at(x, y, floor_map)
-                                node = floor_map.nodes.get(node_id) if node_id else None
-                                if node and node.kind == "shop":
-                                    active_node_id = node_id
-                                    if not campaign_roster:
-                                        campaign_roster = create_party([selected_character_id], campaign_decks)
-                                    shop.enter(campaign_roster, relic_ids)
-                                    pending_relic_offer = None
-                                    mode = "shop"
-                                elif node and node.kind == "reward":
-                                    if not campaign_roster:
-                                        campaign_roster = create_party([selected_character_id], campaign_decks)
-                                    begin_map_reward(node_id)
-                                elif node and node.kind in ("battle", "elite", "boss"):
-                                    encounter = node.encounter_id or "corridor"
-                                    if campaign_roster:
-                                        battle = Battle(
-                                            encounter_id=encounter,
-                                            decks=campaign_decks,
-                                            relic_ids=relic_ids,
-                                            roster=campaign_roster,
-                                        )
-                                    else:
-                                        battle = Battle(
-                                            [selected_character_id],
-                                            encounter,
-                                            decks=campaign_decks,
-                                            relic_ids=relic_ids,
-                                        )
-                                        campaign_roster = battle.party
-                                    active_node_id = node_id
-                                    return_to_map_at = None
-                                    defeat_return_at = None
-                                    reward_coins_paid = False
-                                    mode = "battle"
+                                if screen.can_pan_map_at(x, y, floor_map):
+                                    map_pan = MapPan(x, y, node_id)
+                                elif node_id:
+                                    enter_map_node(node_id)
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         if floor_map and floor_map.floor_number == 1:
                             floor_map = FloorTwo()
