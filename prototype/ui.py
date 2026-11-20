@@ -46,6 +46,8 @@ CARD_BACKGROUND_INSET = 10
 CARD_FOCUS_PADDING = 4
 CARD_TARGET_CENTER = (720, 480)
 CARD_TARGET_SCALE = 1.08
+ATTACK_SPRITE_DURATION = 0.72
+ATTACK_SPRITE_SIZE = (360, 240)
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -128,6 +130,22 @@ class BattleScreen:
         self.attack_effects = {
             key: p2d.load_image(str(asset_root / "images" / "effects" / filename))
             for key, filename in effect_files.items()
+        }
+        self.attack_sprites = {
+            character_id: [
+                p2d.load_image(
+                    str(
+                        asset_root
+                        / "images"
+                        / "attack_sprites"
+                        / "frames"
+                        / character_id
+                        / f"frame_{frame_index:02}.png"
+                    )
+                )
+                for frame_index in range(4)
+            ]
+            for character_id in "ABCD"
         }
         self.defense_effects = {
             key: p2d.load_image(str(asset_root / "images" / "effects" / f"{key}.png"))
@@ -545,6 +563,7 @@ class BattleScreen:
             )
             if active_hero and self.turn_focus_progress.get(active_hero.unit_id, 0.0) >= 0.82:
                 self._draw_active_hero_stats(active_hero, battle)
+        self._draw_player_attack_sprite(battle, now)
         self._draw_defense_effect(battle, now)
         self._draw_attack_effect(battle, now)
 
@@ -778,6 +797,35 @@ class BattleScreen:
             flash.opacify(max(0.0, 1.0 - flash_progress))
             self.image(flash, x, y, round(124 * flash_scale), round(124 * flash_scale))
             flash.opacify(1.0)
+
+    def _draw_player_attack_sprite(self, battle: Battle, now: float) -> None:
+        effect = battle.attack_effect
+        if not effect or effect.source_side != "player":
+            return
+
+        elapsed = now - effect.started_at
+        if elapsed < 0 or elapsed >= ATTACK_SPRITE_DURATION:
+            return
+
+        source = next((hero for hero in battle.party if hero.unit_id == effect.source_id), None)
+        target = next((enemy for enemy in battle.enemies if enemy.unit_id == effect.target_id), None)
+        if not source or not target:
+            return
+
+        progress = elapsed / ATTACK_SPRITE_DURATION
+        frame_index = min(3, int(progress * 4))
+        lunge_offsets = (0, 24, 54, 12)
+        source_x, source_y = self._unit_position(battle, source)
+        target_x, _ = self._unit_position(battle, target)
+        direction = 1 if target_x >= source_x else -1
+        x = source_x + direction * lunge_offsets[frame_index]
+        y = source_y - 20
+        width, height = ATTACK_SPRITE_SIZE
+        sprite = self.attack_sprites[source.unit_id][frame_index]
+        opacity = min(1.0, max(0.0, (1.0 - progress) / 0.2))
+        sprite.opacify(opacity)
+        self.image(sprite, x, y, width, height)
+        sprite.opacify(1.0)
 
     def _draw_defense_effect(self, battle: Battle, now: float) -> None:
         effect = battle.defense_effect
