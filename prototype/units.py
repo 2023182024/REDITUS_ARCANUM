@@ -185,13 +185,14 @@ def create_enemies(encounter_id: str = "corridor") -> list[Enemy]:
         ],
     }
     if encounter_id in floor_two_encounters:
+        hp_multiplier = 2 if "elite" in encounter_id or "boss" in encounter_id else 1.5
         return [
             Enemy(
                 unit_id=unit_id,
                 name=name,
                 side="enemy",
-                hp=hp,
-                max_hp=hp,
+                hp=round(hp * hp_multiplier),
+                max_hp=round(hp * hp_multiplier),
                 attack=attack,
                 speed=speed,
                 accent=accent,
