@@ -528,7 +528,13 @@ def main() -> None:
                         return_to_map_at = None
             elif mode == "reward" and reward_character_id:
                 if reward_stage == "card":
-                    screen.draw_reward_choice(reward_character_id, reward_options, reward_cursor, coins)
+                    screen.draw_reward_choice(
+                        reward_character_id,
+                        reward_options,
+                        reward_cursor,
+                        coins,
+                        floor_map.floor_number if floor_map else 1,
+                    )
                 elif pending_reward_card and pending_reward_source:
                     screen.draw_reward_character_choice(
                         pending_reward_card,
@@ -536,6 +542,7 @@ def main() -> None:
                         campaign_roster,
                         reward_character_cursor,
                         coins,
+                        floor_map.floor_number if floor_map else 1,
                     )
             elif mode == "complete":
                 screen.draw_floor_complete(coins, floor_map.floor_number if floor_map else 1)

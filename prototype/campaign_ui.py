@@ -317,9 +317,11 @@ class CampaignScreen(BattleScreen):
         reward_options: list[tuple[str, SkillCard]],
         cursor: int,
         coins: int = 0,
+        floor_number: int = 1,
     ) -> None:
         self._clear_page()
-        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
+        background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self.panel(110, 140, 1220, 680, (18, 24, 37), GOLD)
         data = character_info(character_id)
         self.text(720, 777, "전투 승리 · 스킬 보상", 29, GOLD, centered=True)
@@ -372,9 +374,11 @@ class CampaignScreen(BattleScreen):
         party: list[PlayerCharacter],
         cursor: int,
         coins: int = 0,
+        floor_number: int = 1,
     ) -> None:
         self._clear_page()
-        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
+        background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self.panel(110, 140, 1220, 680, (18, 24, 37), GOLD)
         self.text(720, 777, "전투 승리 · 카드 추가 대상", 29, GOLD, centered=True)
         self.text(1180, 777, f"코인 {coins}", 16, GOLD, centered=True)
