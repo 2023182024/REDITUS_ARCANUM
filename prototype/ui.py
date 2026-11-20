@@ -47,7 +47,7 @@ CARD_FOCUS_PADDING = 4
 CARD_TARGET_CENTER = (720, 480)
 CARD_TARGET_SCALE = 1.08
 ATTACK_SPRITE_DURATION = 0.72
-ATTACK_SPRITE_SIZE = (360, 240)
+ATTACK_SPRITE_VISIBLE_HEIGHT_RATIO = 0.89
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -815,12 +815,18 @@ class BattleScreen:
         progress = elapsed / ATTACK_SPRITE_DURATION
         frame_index = min(3, int(progress * 4))
         lunge_offsets = (0, 24, 54, 12)
-        source_x, source_y = self._unit_position(battle, source)
+        hero_index = battle.party.index(source)
+        base_x, base_y = self.party_display_positions.get(
+            source.unit_id,
+            PARTY_POSITIONS[min(hero_index, len(PARTY_POSITIONS) - 1)],
+        )
+        source_x, source_y, visual_scale = self._hero_visual_position(source, base_x, base_y)
         target_x, _ = self._unit_position(battle, target)
         direction = 1 if target_x >= source_x else -1
         x = source_x + direction * lunge_offsets[frame_index]
         y = source_y - 20
-        width, height = ATTACK_SPRITE_SIZE
+        height = round(165 * visual_scale / ATTACK_SPRITE_VISIBLE_HEIGHT_RATIO)
+        width = round(height * 1.5)
         sprite = self.attack_sprites[source.unit_id][frame_index]
         opacity = min(1.0, max(0.0, (1.0 - progress) / 0.2))
         sprite.opacify(opacity)
