@@ -480,7 +480,7 @@ def main() -> None:
                 )
             elif mode == "battle" and battle:
                 battle.update(now)
-                screen.draw(battle, now)
+                screen.draw(battle, now, floor_map.floor_number if floor_map else 1)
                 if battle.phase == "victory":
                     if return_to_map_at is None:
                         return_to_map_at = now + 1.1

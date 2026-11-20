@@ -78,6 +78,9 @@ class BattleScreen:
         self.battle_background = p2d.load_image(
             str(asset_root / "images" / "backgrounds" / "floor1_battle_background.png")
         )
+        self.floor2_battle_background = p2d.load_image(
+            str(asset_root / "images" / "backgrounds" / "floor2_battle_background.png")
+        )
         self.target_arrow = p2d.load_image(str(asset_root / "images" / "ui" / "target_arrow.png"))
         self.font_file = self._find_font()
         self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
@@ -198,13 +201,14 @@ class BattleScreen:
         self.rect(x, y, w, h, fill)
         self.rect(x, y, w, h, border, filled=False)
 
-    def draw(self, battle: Battle, now: float) -> None:
+    def draw(self, battle: Battle, now: float, floor_number: int = 1) -> None:
         self._sync_focus(battle)
         self._advance_turn_focus(battle, now)
         self._sync_selected_card_motion(battle, now)
         p2d.clear_canvas()
-        self.battle_background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
-        self._draw_header(battle)
+        background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
+        background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        self._draw_header(battle, floor_number)
         self._draw_order(battle)
         self._draw_battlefield(battle, now)
         self._draw_action_cards(battle, now)
@@ -213,10 +217,10 @@ class BattleScreen:
         self._draw_returning_card_motions(battle, now)
         p2d.update_canvas()
 
-    def _draw_header(self, battle: Battle) -> None:
+    def _draw_header(self, battle: Battle, floor_number: int = 1) -> None:
         self.text(30, 922, "REDITUS ARCANUM", 34, TEXT)
         self.text(1214, 925, f"TURN  {battle.round:02d}", 22, GOLD)
-        self.text(1215, 894, "BATTLE STAGE  /  PROTOTYPE", 14, MUTED)
+        self.text(1215, 894, f"{floor_number}층  ·  BATTLE STAGE", 14, MUTED)
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
@@ -432,7 +436,7 @@ class BattleScreen:
         elif battle.phase == "result":
             self._draw_result(battle, now)
         elif battle.phase == "victory":
-            self._draw_end_card("전투 승리", "1층 맵으로 돌아갑니다.", True)
+            self._draw_end_card("전투 승리", f"{floor_number}층 맵으로 돌아갑니다.", True)
         elif battle.phase == "defeat":
             self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
         elif battle.phase == "player" and battle.selected_card:
