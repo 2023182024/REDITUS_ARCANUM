@@ -123,6 +123,8 @@ class BattleScreen:
         self.card_hand_collapse_progress = 0.0
         self.card_hand_collapse_last_at = time.monotonic()
         self.hovered_card_index: int | None = None
+        self.mouse_position = (0, 0)
+        self.keyword_tooltips: list[tuple[tuple[int, int, int, int], str, str]] = []
         self.card_hover_progress: dict[int, float] = {}
         self.card_hover_last_at = time.monotonic()
         self.turn_focus_progress: dict[str, float] = {}
@@ -206,6 +208,7 @@ class BattleScreen:
         self._sync_focus(battle)
         self._advance_turn_focus(battle, now)
         self._sync_selected_card_motion(battle, now)
+        self.keyword_tooltips.clear()
         p2d.clear_canvas()
         background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
         background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
@@ -217,6 +220,7 @@ class BattleScreen:
         if battle.phase == "player" and battle.selected_card:
             self._draw_selected_target_card(battle, now)
         self._draw_returning_card_motions(battle, now)
+        self._draw_keyword_tooltip()
         p2d.update_canvas()
 
     def _draw_header(self, battle: Battle, floor_number: int = 1) -> None:
@@ -227,6 +231,42 @@ class BattleScreen:
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
         self.text(x + 27, y, title, 14, TEXT, centered=True)
+
+    def _draw_status_chip(self, x: int, y: int, effect, fill: tuple[int, int, int]) -> int:
+        title = effect.badge_text
+        width = max(64, 16 + len(title) * 10)
+        rect = (x, y - 14, x + width, y + 14)
+        self.panel(x, y - 14, width, 28, fill, fill)
+        self.text(x + width / 2, y, title, 12, TEXT, centered=True)
+        descriptions = {
+            "bleed": f"턴 종료 시 {int(effect.amount)} 피해를 받고, 턴 수가 1 감소합니다.",
+            "weak": f"다음 공격의 공격력이 {int(effect.amount * 100)}% 감소합니다.",
+            "slow": f"남은 턴 동안 속도가 {int(effect.amount)} 감소합니다.",
+            "stun": "다음 행동을 건너뜁니다.",
+            "vulnerable": f"다음 피격 피해가 {int(effect.amount * 100)}% 증가하고, 피격 후 해제됩니다.",
+            "rest_lock": "휴식할 수 없습니다. 턴 종료 시 턴 수가 1 감소합니다.",
+        }
+        self.keyword_tooltips.append((rect, title, descriptions[effect.key]))
+        return width
+
+    def _draw_keyword_tooltip(self) -> None:
+        mouse_x, mouse_y = self.mouse_position
+        hovered = next(
+            (item for item in reversed(self.keyword_tooltips) if self._inside(mouse_x, mouse_y, item[0])),
+            None,
+        )
+        if not hovered:
+            return
+        _, title, description = hovered
+        lines = textwrap.wrap(description, width=27) or [description]
+        width = 310
+        height = 48 + len(lines) * 19
+        x = min(max(12, mouse_x + 16), DESIGN_WIDTH - width - 12)
+        y = min(max(12, mouse_y + 18), DESIGN_HEIGHT - height - 12)
+        self.panel(x, y, width, height, (18, 24, 37), GOLD)
+        self.text(x + 12, y + height - 19, title, 13, GOLD)
+        for index, line in enumerate(lines):
+            self.text(x + 12, y + height - 39 - index * 18, line, 11, TEXT)
 
     def _draw_relic_list(self, battle: Battle) -> None:
         relics = [RELIC_BY_ID[relic_id] for relic_id in battle.relic_ids if relic_id in RELIC_BY_ID]
@@ -512,11 +552,14 @@ class BattleScreen:
                 centered=True,
             )
             effects = hero.statuses.snapshot()[:1]
+            status_width = 0
             for index, effect in enumerate(effects):
-                self._draw_chip(info_x - 31 + index * 62, display_y - 34, effect.label, (99, 58, 70))
+                status_width = self._draw_status_chip(
+                    info_x - 31 + index * 70, display_y - 34, effect, (99, 58, 70)
+                )
             if hero.unit_id == "D" and hero.perfect_stacks:
                 self._draw_chip(
-                    info_x - 31 + len(effects) * 62,
+                    info_x - 31 + (status_width + 7 if effects else 0),
                     display_y - 34,
                     f"P+{hero.perfect_stacks}",
                     (99, 81, 43),
@@ -581,9 +624,9 @@ class BattleScreen:
         )
         effects = hero.statuses.snapshot()[:1]
         if effects:
-            self._draw_chip(left + panel_width - 120, bottom + 14, effects[0].label, (99, 58, 70))
+            self._draw_status_chip(left + panel_width - 145, bottom + 14, effects[0], (99, 58, 70))
         if hero.unit_id == "D" and hero.perfect_stacks:
-            self._draw_chip(left + panel_width - 60, bottom + 14, f"P+{hero.perfect_stacks}", (99, 81, 43))
+            self._draw_chip(left + panel_width - 65, bottom + 14, f"P+{hero.perfect_stacks}", (99, 81, 43))
 
     def _draw_incoming_target_arrow(self, battle: Battle) -> None:
         target = battle.incoming_target
@@ -622,7 +665,7 @@ class BattleScreen:
         self._bar(x - 66, y - 113, 132, 9, enemy.hp / enemy.max_hp, CORAL)
         self.text(x, y - 136, f"HP {enemy.hp}/{enemy.max_hp} · ATK {enemy.attack} · SPD {enemy.speed}", 11, MUTED, centered=True)
         for i, effect in enumerate(enemy.statuses.snapshot()[:2]):
-            self._draw_chip(x - 61 + i * 91, y - 163, effect.label, (110, 57, 68))
+            self._draw_status_chip(x - 61 + i * 91, y - 163, effect, (110, 57, 68))
 
     def _draw_attack_effect(self, battle: Battle, now: float) -> None:
         effect = battle.attack_effect
@@ -987,6 +1030,7 @@ class BattleScreen:
 
     def handle_mouse_move(self, battle: Battle, x: int, y: int) -> None:
         """Use pointer hover to focus cards or the nearest living enemy."""
+        self.mouse_position = (x, y)
         if battle.phase != "player" or not battle.active:
             self.hovered_card_index = None
             return

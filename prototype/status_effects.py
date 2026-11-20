@@ -23,6 +23,14 @@ class StatusEffect:
             "rest_lock": "강박",
         }[self.key]
 
+    @property
+    def badge_text(self) -> str:
+        if self.key in ("bleed", "slow", "rest_lock"):
+            return f"{self.label} {self.turns}턴"
+        if self.key == "vulnerable":
+            return f"{self.label} {self.hits}회"
+        return f"{self.label} 1회"
+
     def display(self) -> str:
         details = {
             "bleed": f"{int(self.amount)} · {self.turns}T",
