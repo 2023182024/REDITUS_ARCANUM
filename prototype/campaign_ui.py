@@ -553,8 +553,8 @@ class CampaignScreen(BattleScreen):
         self.panel(80, 246, 1280, 550, PANEL, LINE)
         self.shop_offer_rects.clear()
         centers = (320, 720, 1120)
-        category_names = {"recruit": "영입", "upgrade": "강화", "relic": "유물"}
-        accents = {"recruit": BLUE, "upgrade": MINT, "relic": GOLD}
+        category_names = {"recruit": "영입", "upgrade": "강화", "relic": "유물", "heal": "회복"}
+        accents = {"recruit": BLUE, "upgrade": MINT, "relic": GOLD, "heal": CORAL}
         for index, offer in enumerate(offers):
             center_x = centers[index]
             rect = (center_x - 175, 310, center_x + 175, 755)

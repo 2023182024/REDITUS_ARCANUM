@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from campaign_economy import SHOP_REROLL_STEP, ShopOffer, adjusted_price, make_shop_offers
+from campaign_economy import PARTY_HEAL_RATIO, SHOP_REROLL_STEP, ShopOffer, adjusted_price, make_shop_offers
 from cards import SkillCard, starter_deck
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import PlayerCharacter, create_party
@@ -91,6 +91,16 @@ class ShopSession:
             self.notice = f"{RELIC_BY_ID[offer.item_id].name}을(를) 획득했습니다."
             self.refresh_prices(relic_ids)
             return ShopAction("relic", coins, offer.item_id)
+
+        if offer.category == "heal":
+            coins -= offer.price
+            for hero in party:
+                if hero.alive and hero.hp < hero.max_hp:
+                    amount = max(1, round(hero.max_hp * PARTY_HEAL_RATIO))
+                    hero.hp = min(hero.max_hp, hero.hp + amount)
+            offer.sold = True
+            self.notice = "생존 중인 아군의 체력을 35% 회복했습니다."
+            return ShopAction("heal", coins, offer.item_id)
 
         return ShopAction("none", coins)
 

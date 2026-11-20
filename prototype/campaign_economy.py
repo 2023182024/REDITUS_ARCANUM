@@ -13,6 +13,8 @@ from units import CHARACTER_DATA, PlayerCharacter
 STARTING_COINS = 25
 COIN_REWARDS = {"battle": 30, "elite": 55, "boss": 75}
 RELIC_PRICE = 70
+PARTY_HEAL_PRICE = 45
+PARTY_HEAL_RATIO = 0.35
 SHOP_REROLL_STEP = 10
 
 
@@ -100,4 +102,19 @@ def make_shop_offers(
     else:
         relic_offer = ShopOffer("relic", None, "유물 구입", "새로 획득할 유물이 없습니다.", 0, False)
 
-    return [recruit_offer, upgrade_offer, relic_offer]
+    if any(hero.alive and hero.hp < hero.max_hp for hero in party):
+        heal_offer = ShopOffer(
+            "heal",
+            "party",
+            "아군 회복",
+            "생존 중인 아군 모두 최대 체력의 35% 회복",
+            adjusted_price(PARTY_HEAL_PRICE, discount),
+            base_price=PARTY_HEAL_PRICE,
+        )
+    else:
+        heal_offer = ShopOffer("heal", "party", "아군 회복", "회복할 아군이 없습니다.", 0, False)
+
+    offers = random_source.sample([recruit_offer, upgrade_offer, relic_offer], 2)
+    offers.append(heal_offer)
+    random_source.shuffle(offers)
+    return offers
