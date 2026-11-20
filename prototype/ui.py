@@ -13,6 +13,7 @@ import pico2d as p2d
 
 from battle import Battle
 from cards import SkillCard
+from relics import MAX_RELICS, RELIC_BY_ID
 from units import Enemy, PlayerCharacter
 
 
@@ -211,6 +212,7 @@ class BattleScreen:
         self._draw_header(battle, floor_number)
         self._draw_order(battle)
         self._draw_battlefield(battle, now, floor_number)
+        self._draw_relic_list(battle)
         self._draw_action_cards(battle, now)
         if battle.phase == "player" and battle.selected_card:
             self._draw_selected_target_card(battle, now)
@@ -225,6 +227,18 @@ class BattleScreen:
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
         self.text(x + 27, y, title, 14, TEXT, centered=True)
+
+    def _draw_relic_list(self, battle: Battle) -> None:
+        relics = [RELIC_BY_ID[relic_id] for relic_id in battle.relic_ids if relic_id in RELIC_BY_ID]
+        if not relics:
+            return
+        x, y, width = 330, 0, 180
+        row_height = 26
+        height = 40 + row_height * len(relics)
+        self.panel(x, y, width, height, (18, 24, 37), GOLD)
+        self.text(x + 12, y + height - 20, f"보유 유물  {len(relics)} / {MAX_RELICS}", 12, GOLD)
+        for index, relic in enumerate(relics):
+            self.text(x + 12, y + height - 43 - index * row_height, f"◆  {relic.name}", 11, TEXT)
 
     def _advance_turn_focus(self, battle: Battle, now: float) -> None:
         elapsed = max(0.0, min(0.05, now - self.turn_focus_last_at))
