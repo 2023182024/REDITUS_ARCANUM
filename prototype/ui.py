@@ -127,8 +127,11 @@ class BattleScreen:
             "perfect": p2d.load_image(str(timing_ui_root / "perfect_zone.png")),
         }
         self.font_file = self._find_font()
-        self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
-        self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
+        self.fonts = {
+            (size, False, 0): p2d.load_font(self.font_file, size)
+            for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)
+        }
+        self.textures: dict[tuple[str, tuple[int, int, int], tuple[int, bool, int]], p2d.Image] = {}
         self.portraits: dict[str, p2d.Image] = {}
         for character_id in "ABCD":
             path = asset_root / "images" / "characters_5x" / f"{character_id}.png"
@@ -216,15 +219,23 @@ class BattleScreen:
                 return str(path)
         raise FileNotFoundError("Windows Korean font not found (expected C:\\Windows\\Fonts\\malgun.ttf).")
 
-    def _text_image(self, text: str, color: tuple[int, int, int], size: int) -> p2d.Image:
+    def _text_image(
+        self, text: str, color: tuple[int, int, int], size: int, *, bold: bool = False, outline: int = 0,
+    ) -> p2d.Image:
         size = max(9, round(size * 0.76))
-        key = (text, color, size)
+        font_key = (size, bold, outline)
+        key = (text, color, font_key)
         image = self.textures.get(key)
         if image:
             return image
-        if size not in self.fonts:
-            self.fonts[size] = p2d.load_font(self.font_file, size)
-        font = self.fonts[size]
+        if font_key not in self.fonts:
+            font = p2d.load_font(self.font_file, size)
+            if bold:
+                p2d.TTF_SetFontStyle(font.font, p2d.TTF_STYLE_BOLD)
+            if outline:
+                p2d.TTF_SetFontOutline(font.font, outline)
+            self.fonts[font_key] = font
+        font = self.fonts[font_key]
         surface = p2d.TTF_RenderUTF8_Blended(font.font, text.encode("utf-8"), p2d.SDL_Color(*color))
         if not surface:
             raise RuntimeError(f"Could not render text: {text}")
@@ -302,10 +313,17 @@ class BattleScreen:
         self._draw_returning_card_motions(battle, now)
         self._draw_keyword_tooltip()
         if battle.phase == "round_intro":
-            center_x, center_y = DESIGN_WIDTH // 2, DESIGN_HEIGHT // 2
-            self.panel(center_x - 116, center_y - 40, 232, 80, PANEL, GOLD)
-            self.text(center_x, center_y, f"{battle.round}턴", 48, GOLD, centered=True)
+            self._draw_round_intro(battle, now)
         p2d.update_canvas()
+
+    def _draw_round_intro(self, battle: Battle, now: float) -> None:
+        elapsed = now - (battle.round_intro_until - battle.ROUND_INTRO_DURATION)
+        progress = min(1.0, max(0.0, (elapsed - 0.08) / 0.32))
+        scale = 1.0 - 0.13 * (1.0 - progress) ** 2
+        label = f"{battle.round}턴"
+        for color, outline in ((INK, 3), (GOLD, 0)):
+            image = self._text_image(label, color, 56, bold=True, outline=outline)
+            image.draw(WIDTH // 2, HEIGHT // 2, round(image.w * scale), round(image.h * scale))
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
