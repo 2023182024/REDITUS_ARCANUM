@@ -553,7 +553,7 @@ class BattleScreen:
         self.party_display_positions = self._party_display_positions(battle)
         for hero in battle.party:
             hero_x, hero_y = self.party_display_positions[hero.unit_id]
-            self._draw_hero(hero, hero_x, hero_y, battle)
+            self._draw_hero(hero, hero_x, hero_y, battle, now)
         for enemy, (enemy_x, enemy_y) in zip(battle.enemies, ENEMY_POSITIONS):
             self._draw_enemy(enemy, enemy_x, enemy_y, battle)
         if battle.active:
@@ -601,7 +601,9 @@ class BattleScreen:
             visual_scale = CARD_TARGET_SCALE
         self._draw_skill_card_face(hero, card, center_x, center_y, visual_scale)
 
-    def _draw_hero(self, hero: PlayerCharacter, x: int, y: int, battle: Battle) -> None:
+    def _draw_hero(
+        self, hero: PlayerCharacter, x: int, y: int, battle: Battle, now: float
+    ) -> None:
         active = hero is battle.active
         border = GOLD if active else hero.accent
         glow = (34, 42, 57) if not active else (55, 51, 42)
@@ -610,13 +612,14 @@ class BattleScreen:
         self.circle(display_x, display_y, radius, glow, filled=True)
         if hero.alive:
             self.circle(display_x, display_y, radius, border, filled=False)
-            self.image(
-                self.portraits[hero.unit_id],
-                display_x,
-                display_y,
-                round(110 * visual_scale),
-                round(165 * visual_scale),
-            )
+            if not self._is_attack_sprite_playing(battle, hero, now):
+                self.image(
+                    self.portraits[hero.unit_id],
+                    display_x,
+                    display_y,
+                    round(110 * visual_scale),
+                    round(165 * visual_scale),
+                )
         else:
             self.circle(display_x, display_y, 40, (70, 75, 86), filled=True)
             self.text(display_x, display_y, "DOWN", 14, MUTED, centered=True)
@@ -653,6 +656,16 @@ class BattleScreen:
                     f"P+{hero.perfect_stacks}",
                     (99, 81, 43),
                 )
+
+    @staticmethod
+    def _is_attack_sprite_playing(battle: Battle, hero: PlayerCharacter, now: float) -> bool:
+        effect = battle.attack_effect
+        return bool(
+            effect
+            and effect.source_side == "player"
+            and effect.source_id == hero.unit_id
+            and 0 <= now - effect.started_at < ATTACK_SPRITE_DURATION
+        )
 
     def _party_display_positions(self, battle: Battle) -> dict[str, tuple[int, int]]:
         if battle.active and battle.active.side == "player":
