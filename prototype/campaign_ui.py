@@ -1,18 +1,32 @@
-"""Title, character selection, and first-floor map screens."""
+"""Campaign screens and the scrollable expedition map."""
 
 from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass
 
-from campaign import FloorOne, FloorTwo
+from campaign import FloorOne, FloorTwo, MapNode
 from campaign_economy import ShopOffer
 from cards import MAX_DECK_SIZE, PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import PlayerCharacter, character_info
-from ui import BattleScreen, CARD_W, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE, CORAL
+from ui import (
+    BattleScreen, BLUE, CARD_W, CORAL, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT,
+    INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, SCALE_X, SCALE_Y, TEXT, WIDTH,
+)
 
 import pico2d as p2d
+
+
+# Cell order in the three-column atlas, read from the top left.
+MAP_SEALS = {
+    "start": (0, "시작"), "battle": (1, "전투"), "elite": (2, "정예"),
+    "shop": (3, "상점"), "reward": (4, "보상"), "boss": (5, "층 보스"),
+}
+SEPIA = (66, 42, 27)
+BRASS = (166, 121, 57)
+LEATHER = (62, 35, 32)
+MAP_NODE_HALF_HEIGHT = 58
 
 
 @dataclass
@@ -37,12 +51,17 @@ class CampaignScreen(BattleScreen):
     def __init__(self, asset_root):
         super().__init__(asset_root)
         self.start_screen_image = p2d.load_image(str(asset_root / "images" / "start_screen.png"))
+        map_art = asset_root / "images" / "ui" / "stage_map"
+        self.map_scroll = p2d.load_image(str(map_art / "scroll.png"))
+        self.map_seals = p2d.load_image(str(map_art / "seals.png"))
+        self.map_binding = p2d.load_image(str(map_art / "binding.png"))
+        self.map_nameplate = p2d.load_image(str(map_art / "nameplate.png"))
         self.start_rect = (535, 230, 905, 325)
         self.confirm_rect = (540, 125, 900, 205)
         self.character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
-        self.map_viewport = (330, 80, 1410, 830)
+        self.map_viewport = (330, 80, 1410, 844)
         self.map_scrollbar_track_rect = (1380, 80, 1398, 830)
         self.map_scrollbar_thumb_rect: tuple[int, int, int, int] | None = None
         self.deck_preview_character_id: str | None = None
@@ -111,42 +130,40 @@ class CampaignScreen(BattleScreen):
         relic_ids: list[str] | None = None,
         scroll_y: int = 0,
     ) -> None:
-        self._clear_page()
+        p2d.clear_canvas()
+        self.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, (35, 26, 24))
         self.map_node_rects.clear()
         self.map_character_rects.clear()
-        self.text(875, 905, floor_map.floor_title, 28, TEXT, centered=True)
-        self.text(353, 905, f"코인 {coins}", 17, GOLD)
+        self.text(875, 919, floor_map.floor_title, 30, GOLD, centered=True)
+        self.text(353, 925, f"코인 {coins}", 17, GOLD)
         if relic_ids:
             relic_names = " · ".join(RELIC_BY_ID[relic_id].name for relic_id in relic_ids[:5])
-            self.text(353, 878, f"유물: {relic_names}", 12, MINT)
-        self.panel(self.map_restart_rect[0], self.map_restart_rect[1], self.map_restart_rect[2] - self.map_restart_rect[0], self.map_restart_rect[3] - self.map_restart_rect[1], PANEL_LIGHT, LINE)
+            self.text(353, 900, f"유물: {relic_names}", 12, MINT)
+        self.panel(self.map_restart_rect[0], self.map_restart_rect[1], self.map_restart_rect[2] - self.map_restart_rect[0], self.map_restart_rect[3] - self.map_restart_rect[1], LEATHER, BRASS)
         self.text((self.map_restart_rect[0] + self.map_restart_rect[2]) / 2, 889, "처음으로", 13, MUTED, centered=True)
 
         self._draw_route_panel(character_id, party, floor_map.floor_number)
-        use_scroll = floor_map.floor_number >= 2
-        visible_nodes = {
-            node.node_id
-            for node in floor_map.nodes.values()
-            if not use_scroll or self._map_node_visible(node, scroll_y)
-        }
-        for source_id, target_id in floor_map.edges:
-            if source_id not in visible_nodes or target_id not in visible_nodes:
-                continue
-            source = floor_map.nodes[source_id]
-            target = floor_map.nodes[target_id]
-            color = (107, 99, 76) if source.cleared or target.unlocked else (49, 57, 71)
-            self.line(source.x, source.y - scroll_y, target.x, target.y - scroll_y, color)
-        for node in floor_map.nodes.values():
-            if node.node_id in visible_nodes:
-                self._draw_map_node(node, y_offset=scroll_y if use_scroll else 0)
+        maximum = self.max_map_scroll(floor_map)
+        scroll_y = max(0, min(scroll_y, maximum))
+        self._draw_scroll_paper(scroll_y, maximum)
+        left, bottom, right, top = self.map_viewport
+        clip = p2d.SDL_Rect(round(left * SCALE_X), HEIGHT - round(top * SCALE_Y),
+                            round((right - left) * SCALE_X), round((top - bottom) * SCALE_Y))
+        renderer = p2d.pico2d.renderer
+        p2d.SDL_RenderSetClipRect(renderer, clip)
+        try:
+            for source_id, target_id in floor_map.edges:
+                source, target = floor_map.nodes[source_id], floor_map.nodes[target_id]
+                color = SEPIA if source.cleared or target.unlocked else (134, 105, 76)
+                self.line(source.x, source.y - scroll_y, target.x, target.y - scroll_y, color)
+            for node in floor_map.nodes.values():
+                self._draw_map_node(node, scroll_y)
+        finally:
+            p2d.SDL_RenderSetClipRect(renderer, None)
         self._draw_map_scrollbar(floor_map, scroll_y)
 
-        hint_y = 48 if use_scroll else 91
-        hint = "휠 또는 왼쪽 버튼 드래그로 지도 이동 · 진행 가능한 노드를 선택하세요" if use_scroll else "진행 가능한 노드를 선택하세요"
-        self.text(875, hint_y, hint, 14, MUTED, centered=True)
-        if notice:
-            self.panel(510, 842, 730, 38, (50, 45, 39), GOLD)
-            self.text(875, 861, notice[:62], 13, GOLD, centered=True)
+        hint = "휠 또는 왼쪽 버튼 드래그로 지도 이동 · 진행 가능한 노드를 선택하세요" if maximum else "진행 가능한 노드를 선택하세요"
+        self.text(875, 20, notice[:62] or hint, 14, GOLD if notice else (211, 191, 163), centered=True)
         if self.deck_preview_character_id:
             self._draw_deck_preview(
                 self.deck_preview_character_id,
@@ -160,11 +177,10 @@ class CampaignScreen(BattleScreen):
         party: list[PlayerCharacter] | None = None,
         floor_number: int = 1,
     ) -> None:
-        self.panel(34, 50, 286, 785, PANEL)
+        self.image_stretched(self.map_binding, 20, 44, 308, 807)
         party = party or []
         party_ids = [hero.unit_id for hero in party] if party else [character_id]
-        self.text(177, 813, f"동행자  {len(party_ids)} / 4", 17, GOLD, centered=True)
-        self.text(177, 792, "캐릭터를 클릭하면 덱을 확인합니다", 11, MUTED, centered=True)
+        self.text(177, 808, f"동행자  {len(party_ids)} / 4", 22, GOLD, centered=True)
         slot_rects = ((48, 618, 306, 780), (48, 448, 306, 610), (48, 278, 306, 440), (48, 108, 306, 270))
         for index, rect in enumerate(slot_rects):
             member_id = party_ids[index] if index < len(party_ids) else None
@@ -172,7 +188,7 @@ class CampaignScreen(BattleScreen):
                 hero = party[index] if party else None
                 data = character_info(member_id)
                 self.map_character_rects[member_id] = rect
-                self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL_LIGHT, data["accent"])
+                self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], LEATHER, BRASS)
                 self.image(self.portraits[member_id], rect[0] + 64, rect[1] + 81, 108, 162)
                 info_x = rect[0] + 155
                 name = (hero.name if hero else data["name"]).split(" · ", 1)[0]
@@ -180,28 +196,42 @@ class CampaignScreen(BattleScreen):
                 attack = hero.attack if hero else data["attack"]
                 speed = hero.speed if hero else data["speed"]
                 level = hero.level if hero else 1
-                self.text(info_x, rect[1] + 137, f"{name} · Lv.{level}", 11, data["accent"])
-                self.text(info_x, rect[1] + 111, hp_text, 9, TEXT)
-                self.text(info_x, rect[1] + 91, f"ATK {attack} · SPD {speed}", 9, MUTED)
+                self.text(info_x, rect[1] + 137, f"{name} · Lv.{level}", 14, data["accent"])
+                self.text(info_x, rect[1] + 111, hp_text, 12, TEXT)
+                self._bar(info_x, rect[1] + 93, 82, 5, hero.hp / hero.max_hp if hero else 1.0, (180, 91, 72))
+                self.text(info_x, rect[1] + 76, f"ATK {attack} · SPD {speed}", 12, (216, 193, 166))
                 self.text(info_x, rect[1] + 20, "클릭하여 덱 보기", 9, GOLD)
             else:
-                self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL, LINE)
-                self.circle(rect[0] + 64, rect[1] + 81, 28, PANEL_LIGHT, filled=True)
-                self.text(rect[0] + 64, rect[1] + 81, "+", 28, MUTED, centered=True)
+                self.rect(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], BRASS, filled=False)
+                self.text(rect[0] + 64, rect[1] + 81, "◇", 24, BRASS, centered=True)
                 self.text(rect[0] + 158, rect[1] + 95, "영입 대기 슬롯", 11, MUTED)
-                self.text(rect[0] + 158, rect[1] + 72, "동료 영입 후 표시", 9, MUTED)
         self.text(58, 87, f"층 진행  {floor_number} / 2", 13, GOLD)
-        self.text(58, 66, "현재 프로토타입은 2층까지", 9, MUTED)
 
-    def _map_node_visible(self, node, scroll_y: int = 0) -> bool:
-        half_height = 39 if node.kind == "start" else 54
-        y = node.y - scroll_y
-        return self.map_viewport[1] + half_height <= y <= self.map_viewport[3] - half_height
+    def _draw_scroll_paper(self, scroll_y: int, maximum: int) -> None:
+        left, bottom, right, top = self.map_viewport
+        x = round((left + right) / 2 * SCALE_X)
+        width = round((right - left - 24) * SCALE_X)
+        height = top - bottom
+        # Bottom-origin source rows for the exposed paper between the two rolls.
+        body_start, body_end = 128, 1396
+        texture_height = min(body_end - body_start, height + maximum)
+        ratio = texture_height / (height + maximum)
+        low = body_start + round(scroll_y * ratio)
+        high = body_start + round((scroll_y + height) * ratio)
+        for src_y, src_h, dst_y, dst_h in (
+            (low, high - low, bottom, height),
+            (58, body_start - 58, bottom - 42, 42),
+            (body_end, 1474 - body_end, top, 42),
+        ):
+            self.map_scroll.clip_draw(
+                0, src_y, self.map_scroll.w, src_h, x,
+                round((dst_y + dst_h / 2) * SCALE_Y), width, round(dst_h * SCALE_Y),
+            )
 
     def max_map_scroll(self, floor_map: FloorOne | FloorTwo) -> int:
         if floor_map.floor_number < 2:
             return 0
-        highest_node = max(node.y + (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
+        highest_node = max(node.y for node in floor_map.nodes.values()) + MAP_NODE_HALF_HEIGHT
         return max(0, highest_node - self.map_viewport[3])
 
     def _draw_map_scrollbar(self, floor_map: FloorOne | FloorTwo, scroll_y: int) -> None:
@@ -211,16 +241,14 @@ class CampaignScreen(BattleScreen):
             return
         x0, y0, x1, y1 = self.map_scrollbar_track_rect
         track_height = y1 - y0
-        content_bottom = min(node.y - (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
-        content_top = max(node.y + (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
-        content_height = content_top - content_bottom
+        content_height = self.map_viewport[3] - self.map_viewport[1] + maximum
         thumb_height = max(64, round(track_height * track_height / content_height))
         thumb_height = min(track_height, thumb_height)
         thumb_range = track_height - thumb_height
         thumb_bottom = y0 + round(thumb_range * scroll_y / maximum)
-        self.panel(x0, y0, x1 - x0, track_height, PANEL, LINE)
+        self.panel(x0, y0, x1 - x0, track_height, LEATHER, BRASS)
         self.map_scrollbar_thumb_rect = (x0, thumb_bottom, x1, thumb_bottom + thumb_height)
-        self.panel(x0 + 2, thumb_bottom, x1 - x0 - 4, thumb_height, (91, 113, 142), GOLD)
+        self.panel(x0 + 2, thumb_bottom, x1 - x0 - 4, thumb_height, BRASS, GOLD)
 
     def can_pan_map_at(self, x: int, y: int, floor_map: FloorOne | FloorTwo) -> bool:
         return self._inside(x, y, self.map_viewport) and self.max_map_scroll(floor_map) > 0
@@ -248,48 +276,36 @@ class CampaignScreen(BattleScreen):
         position = max(0, min(usable_range, thumb_bottom - track_bottom))
         return round(maximum * position / usable_range)
 
-    def _draw_map_node(self, node, compact: bool = False, y_offset: int = 0) -> None:
-        if compact:
-            w, h = 190, 56
-            accent = {
-                "start": (112, 174, 152),
-                "battle": (203, 126, 110),
-                "elite": (232, 170, 83),
-                "shop": (134, 159, 201),
-                "reward": (112, 211, 178),
-                "boss": GOLD,
-            }[node.kind]
-        elif node.kind == "start":
-            w, h = 210, 78
-            accent = (112, 174, 152)
-        else:
-            w, h = 230, 108
-            accent = {
-                "battle": (203, 126, 110),
-                "elite": (232, 170, 83),
-                "shop": (134, 159, 201),
-                "reward": (112, 211, 178),
-                "boss": GOLD,
-            }[node.kind]
-        drawn_y = node.y - y_offset
-        rect = (node.x - w // 2, drawn_y - h // 2, node.x + w // 2, drawn_y + h // 2)
-        self.map_node_rects[node.node_id] = rect
+    def _draw_map_node(self, node: MapNode, scroll_y: int) -> None:
+        x, y = node.x, node.y - scroll_y
+        bottom = max(self.map_viewport[1], y - MAP_NODE_HALF_HEIGHT)
+        top = min(self.map_viewport[3], y + MAP_NODE_HALF_HEIGHT)
+        if bottom >= top:
+            return
+        self.map_node_rects[node.node_id] = (x - 90, bottom, x + 90, top)
         state = node.state
-        edge = GOLD if state == "available" else (97, 143, 118) if state == "cleared" else LINE
-        fill = (48, 45, 40) if state == "available" else (31, 43, 42) if state == "cleared" else PANEL
-        self.panel(rect[0], rect[1], w, h, fill, edge)
-        title_offset = 12 if compact else 23
-        status_offset = -12 if compact else -15
-        title_size = 15 if compact else (19 if node.kind != "start" else 16)
-        status_size = 11 if compact else 13
-        self.text(node.x, drawn_y + title_offset, node.title, title_size, accent if state != "locked" else MUTED, centered=True)
-        if node.kind == "start":
-            status = "시작"
-        else:
-            kind_label = {"battle": "전투", "elite": "정예", "shop": "상점", "reward": "보상", "boss": "층 보스"}[node.kind]
-            status_label = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
-            status = f"{kind_label}  ·  {status_label}"
-        self.text(node.x, drawn_y + status_offset, status, status_size, GOLD if state == "available" else MUTED, centered=True)
+        index, label = MAP_SEALS[node.kind]
+        cell = self.map_seals.w // 3
+        seal_y = y + 12
+        if state == "available":
+            self.circle(x, seal_y, 46, SEPIA, filled=True)
+            self.circle(x, seal_y, 44, GOLD, filled=True)
+            self.circle(x, seal_y, 40, SEPIA)
+        self.map_seals.opacify(0.70 if state == "locked" else 1.0)
+        self.map_seals.clip_draw(
+            (index % 3) * cell, (1 - index // 3) * cell, cell, cell,
+            round(x * SCALE_X), round(seal_y * SCALE_Y),
+            round(92 * min(SCALE_X, SCALE_Y)), round(92 * min(SCALE_X, SCALE_Y)),
+        )
+        self.map_seals.opacify(1.0)
+        if state == "cleared":
+            self.circle(x + 28, seal_y - 8, 12, (35, 90, 77), filled=True)
+            self.line(x + 22, seal_y - 7, x + 26, seal_y - 12, TEXT)
+            self.line(x + 26, seal_y - 12, x + 34, seal_y - 2, TEXT)
+        self.image_stretched(self.map_nameplate, x - 90, y - 58, 180, 55)
+        self.text(x, y - 22, label, 21, SEPIA, centered=True)
+        status = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
+        self.text(x, y - 40, f"{node.title} · {status}", 14, SEPIA, centered=True)
 
     def _draw_deck_preview(self, character_id: str, deck_cards: list[SkillCard] | None) -> None:
         data = character_info(character_id)
