@@ -48,6 +48,9 @@ CARD_TARGET_CENTER = (720, 480)
 CARD_TARGET_SCALE = 1.08
 ATTACK_SPRITE_DURATION = 0.72
 ATTACK_SPRITE_VISIBLE_HEIGHT_RATIO = 0.89
+TIMING_CENTER_X = 800
+TIMING_PANEL_RECT = (534, 455, 532, 190)
+TIMING_GAUGE_X = TIMING_CENTER_X - 200
 
 INK = (13, 17, 28)
 PANEL = (25, 31, 47)
@@ -956,16 +959,16 @@ class BattleScreen:
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"
-        self.panel(454, 455, 532, 190, (24, 30, 46), GOLD if defending else (111, 179, 197))
+        self.panel(*TIMING_PANEL_RECT, (24, 30, 46), GOLD if defending else (111, 179, 197))
         if defending:
             source = battle.incoming_source.name if battle.incoming_source else "적"
             skill = battle.incoming_skill.name if battle.incoming_skill else "공격"
             target = battle.incoming_target.name if battle.incoming_target else "아군"
-            self.text(720, 612, f"{source} · {skill}", 22, CORAL, centered=True)
-            self.text(720, 580, f"{target} 방어 · 입력 성공 시 피해 50% 감소", 15, TEXT, centered=True)
+            self.text(TIMING_CENTER_X, 612, f"{source} · {skill}", 22, CORAL, centered=True)
+            self.text(TIMING_CENTER_X, 580, f"{target} 방어 · 입력 성공 시 피해 50% 감소", 15, TEXT, centered=True)
             if battle.incoming_skill and battle.incoming_skill.splash_ratio:
                 self.text(
-                    720,
+                    TIMING_CENTER_X,
                     551,
                     f"추가 피해 {int(battle.incoming_skill.splash_ratio * 100)}% · 다른 아군 1명",
                     13,
@@ -975,7 +978,7 @@ class BattleScreen:
         else:
             card = battle.selected_card
             target = battle.attack_target.name if battle.attack_target else "적"
-            self.text(720, 612, f"{card.name if card else '공격'}  →  {target}", 22, GOLD, centered=True)
+            self.text(TIMING_CENTER_X, 612, f"{card.name if card else '공격'}  →  {target}", 22, GOLD, centered=True)
             if battle.phase == "hold_wait":
                 prompt = "SPACE를 누른 뒤, 타이밍에 맞춰 놓으세요"
             elif battle.phase == "hold_timing":
@@ -986,12 +989,12 @@ class BattleScreen:
                 prompt = f"타격 {battle.attack_hit_index + 1}/{card.hit_count} · SPACE로 판정"
             else:
                 prompt = "정확한 순간에 SPACE"
-            self.text(720, 580, prompt, 15, TEXT, centered=True)
+            self.text(TIMING_CENTER_X, 580, prompt, 15, TEXT, centered=True)
         self._timing_gauge(battle, now)
-        self.text(720, 478, "GOOD", 12, MUTED, centered=True)
+        self.text(TIMING_CENTER_X, 478, "GOOD", 12, MUTED, centered=True)
 
     def _timing_gauge(self, battle: Battle, now: float) -> None:
-        x, y, w, h = 520, 510, 400, 22
+        x, y, w, h = TIMING_GAUGE_X, 510, 400, 22
         self.rect(x, y, w, h, (51, 58, 72))
         center_x = x + int(battle.timing_center * w)
         good_px = int(battle.good_window * w)
@@ -1000,7 +1003,7 @@ class BattleScreen:
         self.rect(max(x, center_x - perfect_px), y, min(w, 2 * perfect_px), h, (77, 164, 130))
         marker_x = x + int(battle.timing_progress(now) * w)
         self.line(marker_x, y - 6, marker_x, y + h + 6, (248, 246, 229))
-        self.text(720, 534, "PERFECT" if abs(marker_x - center_x) <= perfect_px else "", 12, MINT, centered=True)
+        self.text(TIMING_CENTER_X, 534, "PERFECT" if abs(marker_x - center_x) <= perfect_px else "", 12, MINT, centered=True)
 
     def _draw_result(self, battle: Battle, now: float) -> None:
         elapsed = max(0.0, now - battle.result_started_at)
