@@ -387,7 +387,7 @@ def main() -> None:
                 elif event.type == p2d.SDL_KEYUP and mode == "battle" and battle:
                     screen.handle_key_up(battle, event.key)
                 elif event.type == getattr(p2d, "SDL_MOUSEWHEEL", -1) and mode == "map" and floor_map:
-                    if map_pan or map_scroll_dragging or screen.deck_preview_character_id:
+                    if not screen.map_is_open(floor_map) or map_pan or map_scroll_dragging or screen.deck_preview_character_id:
                         continue
                     wheel_y = getattr(event, "y", 0)
                     map_scroll_y = max(
@@ -455,17 +455,7 @@ def main() -> None:
                             map_scroll_y = 0
                             mode = "map"
                     elif mode == "map" and floor_map and selected_character_id:
-                        if not screen.deck_preview_character_id and screen.map_scrollbar_thumb_at(x, y):
-                            map_scroll_dragging = True
-                            map_scroll_drag_offset = screen.map_scrollbar_drag_offset(y)
-                        elif not screen.deck_preview_character_id and screen.map_scrollbar_track_at(x, y):
-                            thumb = screen.map_scrollbar_thumb_rect
-                            if thumb:
-                                thumb_height = thumb[3] - thumb[1]
-                                map_scroll_y = screen.map_scroll_from_thumb_bottom(
-                                    y - thumb_height // 2, floor_map
-                                )
-                        elif screen.deck_preview_character_id:
+                        if screen.deck_preview_character_id:
                             if screen.map_deck_preview_close_clicked(x, y):
                                 screen.close_deck_preview()
                             else:
@@ -477,10 +467,19 @@ def main() -> None:
                         elif screen.map_restart_clicked(x, y):
                             mode = "title"
                             selected_character_id = None
-                        else:
-                            clicked_character = screen.map_character_at(x, y)
-                            if clicked_character:
-                                screen.toggle_deck_preview(clicked_character)
+                        elif clicked_character := screen.map_character_at(x, y):
+                            screen.toggle_deck_preview(clicked_character)
+                        elif screen.map_is_open(floor_map):
+                            if screen.map_scrollbar_thumb_at(x, y):
+                                map_scroll_dragging = True
+                                map_scroll_drag_offset = screen.map_scrollbar_drag_offset(y)
+                            elif screen.map_scrollbar_track_at(x, y):
+                                thumb = screen.map_scrollbar_thumb_rect
+                                if thumb:
+                                    thumb_height = thumb[3] - thumb[1]
+                                    map_scroll_y = screen.map_scroll_from_thumb_bottom(
+                                        y - thumb_height // 2, floor_map
+                                    )
                             else:
                                 node_id = screen.map_node_at(x, y, floor_map)
                                 if screen.can_pan_map_at(x, y, floor_map):

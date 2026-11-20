@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass
+from time import monotonic
 
 from campaign import FloorOne, FloorTwo, MapNode
 from campaign_economy import ShopOffer
@@ -27,6 +28,7 @@ SEPIA = (66, 42, 27)
 BRASS = (166, 121, 57)
 LEATHER = (62, 35, 32)
 MAP_NODE_HALF_HEIGHT = 58
+MAP_UNROLL_SECONDS = 0.85
 
 
 @dataclass
@@ -62,6 +64,8 @@ class CampaignScreen(BattleScreen):
         self.map_character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_viewport = (330, 80, 1410, 844)
+        self._displayed_floor: FloorOne | FloorTwo | None = None
+        self._unroll_started_at: float | None = None
         self.map_scrollbar_track_rect = (1380, 80, 1398, 830)
         self.map_scrollbar_thumb_rect: tuple[int, int, int, int] | None = None
         self.deck_preview_character_id: str | None = None
@@ -145,8 +149,11 @@ class CampaignScreen(BattleScreen):
         self._draw_route_panel(character_id, party, floor_map.floor_number)
         maximum = self.max_map_scroll(floor_map)
         scroll_y = max(0, min(scroll_y, maximum))
-        self._draw_scroll_paper(scroll_y, maximum)
+        inset = self._map_unroll_inset(floor_map, monotonic())
+        self._draw_scroll_paper(scroll_y, maximum, inset)
         left, bottom, right, top = self.map_viewport
+        bottom += inset
+        top -= inset
         clip = p2d.SDL_Rect(round(left * SCALE_X), HEIGHT - round(top * SCALE_Y),
                             round((right - left) * SCALE_X), round((top - bottom) * SCALE_Y))
         renderer = p2d.pico2d.renderer
@@ -160,10 +167,15 @@ class CampaignScreen(BattleScreen):
                 self._draw_map_node(node, scroll_y)
         finally:
             p2d.SDL_RenderSetClipRect(renderer, None)
-        self._draw_map_scrollbar(floor_map, scroll_y)
+        if self.map_is_open(floor_map):
+            self._draw_map_scrollbar(floor_map, scroll_y)
+        else:
+            self.map_node_rects.clear()
+            self.map_scrollbar_thumb_rect = None
 
         hint = "휠 또는 왼쪽 버튼 드래그로 지도 이동 · 진행 가능한 노드를 선택하세요" if maximum else "진행 가능한 노드를 선택하세요"
-        self.text(875, 20, notice[:62] or hint, 14, GOLD if notice else (211, 191, 163), centered=True)
+        if notice or self.map_is_open(floor_map):
+            self.text(875, 20, notice[:62] or hint, 14, GOLD if notice else (211, 191, 163), centered=True)
         if self.deck_preview_character_id:
             self._draw_deck_preview(
                 self.deck_preview_character_id,
@@ -207,7 +219,25 @@ class CampaignScreen(BattleScreen):
                 self.text(rect[0] + 158, rect[1] + 95, "영입 대기 슬롯", 11, MUTED)
         self.text(58, 87, f"층 진행  {floor_number} / 2", 13, GOLD)
 
-    def _draw_scroll_paper(self, scroll_y: int, maximum: int) -> None:
+    def map_is_open(self, floor_map: FloorOne | FloorTwo) -> bool:
+        return self._displayed_floor is floor_map and self._unroll_started_at is None
+
+    def _map_unroll_inset(self, floor_map: FloorOne | FloorTwo, now: float) -> int:
+        # A fresh run creates a new floor object even when the floor number repeats.
+        if self._displayed_floor is not floor_map:
+            self._displayed_floor = floor_map
+            self._unroll_started_at = now
+        if self._unroll_started_at is None:
+            return 0
+        progress = (now - self._unroll_started_at) / MAP_UNROLL_SECONDS
+        if progress >= 1.0:
+            self._unroll_started_at = None
+            return 0
+        eased = progress * progress * (3 - 2 * progress)
+        height = self.map_viewport[3] - self.map_viewport[1]
+        return round((height - 4) / 2 * (1 - eased))
+
+    def _draw_scroll_paper(self, scroll_y: int, maximum: int, inset: int) -> None:
         left, bottom, right, top = self.map_viewport
         x = round((left + right) / 2 * SCALE_X)
         width = round((right - left - 24) * SCALE_X)
@@ -216,12 +246,12 @@ class CampaignScreen(BattleScreen):
         body_start, body_end = 128, 1396
         texture_height = min(body_end - body_start, height + maximum)
         ratio = texture_height / (height + maximum)
-        low = body_start + round(scroll_y * ratio)
-        high = body_start + round((scroll_y + height) * ratio)
+        low = body_start + round((scroll_y + inset) * ratio)
+        high = body_start + round((scroll_y + height - inset) * ratio)
         for src_y, src_h, dst_y, dst_h in (
-            (low, high - low, bottom, height),
-            (58, body_start - 58, bottom - 42, 42),
-            (body_end, 1474 - body_end, top, 42),
+            (low, high - low, bottom + inset, height - 2 * inset),
+            (58, body_start - 58, bottom + inset - 42, 42),
+            (body_end, 1474 - body_end, top - inset, 42),
         ):
             self.map_scroll.clip_draw(
                 0, src_y, self.map_scroll.w, src_h, x,
