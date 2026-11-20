@@ -149,6 +149,9 @@ class BattleScreen:
             for character_id, cards in CARD_ILLUSTRATION_FILES.items()
             for card_name, relative_path in cards.items()
         }
+        self.attack_card_illustration = p2d.load_image(
+            str(asset_root / "images" / "card_art" / "attack.png")
+        )
         self.action_cursor = 0
         self.target_enemy_id: str | None = None
         self.focus_actor_id: str | None = None
@@ -431,6 +434,8 @@ class BattleScreen:
         draw_h: int,
     ) -> None:
         illustration = self.card_illustrations.get((character_id, card.name))
+        if not illustration and card.name == "공격":
+            illustration = self.attack_card_illustration
         if not illustration:
             return
         visual_bottom = center_y - draw_h / 2
