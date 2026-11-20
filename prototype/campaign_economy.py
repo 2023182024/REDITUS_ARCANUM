@@ -114,7 +114,6 @@ def make_shop_offers(
     else:
         heal_offer = ShopOffer("heal", "party", "아군 회복", "회복할 아군이 없습니다.", 0, False)
 
-    offers = random_source.sample([recruit_offer, upgrade_offer, relic_offer], 2)
-    offers.append(heal_offer)
-    random_source.shuffle(offers)
-    return offers
+    return random_source.sample(
+        [recruit_offer, upgrade_offer, relic_offer, heal_offer], 3
+    )
