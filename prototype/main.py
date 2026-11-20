@@ -33,6 +33,8 @@ def main() -> None:
         selected_character_id: str | None = None
         floor_map: FloorOne | FloorTwo | None = None
         map_scroll_y = 0
+        map_scroll_dragging = False
+        map_scroll_drag_offset = 0
         battle: Battle | None = None
         active_node_id: str | None = None
         return_to_map_at: float | None = None
@@ -240,7 +242,11 @@ def main() -> None:
                 elif event.type == p2d.SDL_MOUSEMOTION:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
-                    if mode == "battle" and battle:
+                    if mode == "map" and floor_map and map_scroll_dragging:
+                        map_scroll_y = screen.map_scroll_from_thumb_bottom(
+                            y - map_scroll_drag_offset, floor_map
+                        )
+                    elif mode == "battle" and battle:
                         screen.handle_mouse_move(battle, x, y)
                     elif mode == "reward":
                         if reward_stage == "card":
@@ -249,6 +255,8 @@ def main() -> None:
                         else:
                             hover_index = screen.reward_character_at(x, y)
                             reward_character_cursor = hover_index if hover_index is not None else -1
+                elif event.type == p2d.SDL_MOUSEBUTTONUP and event.button == p2d.SDL_BUTTON_LEFT:
+                    map_scroll_dragging = False
                 elif event.type == p2d.SDL_MOUSEBUTTONDOWN and event.button == p2d.SDL_BUTTON_LEFT:
                     x = round(event.x / SCALE_X)
                     y = round((HEIGHT - event.y) / SCALE_Y)
@@ -274,7 +282,17 @@ def main() -> None:
                             map_scroll_y = 0
                             mode = "map"
                     elif mode == "map" and floor_map and selected_character_id:
-                        if screen.deck_preview_character_id:
+                        if screen.map_scrollbar_thumb_at(x, y):
+                            map_scroll_dragging = True
+                            map_scroll_drag_offset = screen.map_scrollbar_drag_offset(y)
+                        elif screen.map_scrollbar_track_at(x, y):
+                            thumb = screen.map_scrollbar_thumb_rect
+                            if thumb:
+                                thumb_height = thumb[3] - thumb[1]
+                                map_scroll_y = screen.map_scroll_from_thumb_bottom(
+                                    y - thumb_height // 2, floor_map
+                                )
+                        elif screen.deck_preview_character_id:
                             if screen.map_deck_preview_close_clicked(x, y):
                                 screen.close_deck_preview()
                             else:

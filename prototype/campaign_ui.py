@@ -24,6 +24,8 @@ class CampaignScreen(BattleScreen):
         self.map_character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_viewport = (330, 80, 1410, 830)
+        self.map_scrollbar_track_rect = (1380, 80, 1398, 830)
+        self.map_scrollbar_thumb_rect: tuple[int, int, int, int] | None = None
         self.deck_preview_character_id: str | None = None
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
         self.reward_choice_rects: list[tuple[int, int, int, int]] = []
@@ -116,6 +118,7 @@ class CampaignScreen(BattleScreen):
         for node in floor_map.nodes.values():
             if node.node_id in visible_nodes:
                 self._draw_map_node(node, y_offset=scroll_y if use_scroll else 0)
+        self._draw_map_scrollbar(floor_map, scroll_y)
 
         hint_y = 48 if use_scroll else 91
         hint = "마우스 휠로 맵 이동 · 진행 가능한 노드를 선택하세요" if use_scroll else "진행 가능한 노드를 선택하세요"
@@ -179,6 +182,47 @@ class CampaignScreen(BattleScreen):
             return 0
         highest_node = max(node.y + (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
         return max(0, highest_node - self.map_viewport[3])
+
+    def _draw_map_scrollbar(self, floor_map: FloorOne | FloorTwo, scroll_y: int) -> None:
+        self.map_scrollbar_thumb_rect = None
+        maximum = self.max_map_scroll(floor_map)
+        if maximum <= 0:
+            return
+        x0, y0, x1, y1 = self.map_scrollbar_track_rect
+        track_height = y1 - y0
+        content_bottom = min(node.y - (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
+        content_top = max(node.y + (39 if node.kind == "start" else 54) for node in floor_map.nodes.values())
+        content_height = content_top - content_bottom
+        thumb_height = max(64, round(track_height * track_height / content_height))
+        thumb_height = min(track_height, thumb_height)
+        thumb_range = track_height - thumb_height
+        thumb_bottom = y0 + round(thumb_range * scroll_y / maximum)
+        self.panel(x0, y0, x1 - x0, track_height, PANEL, LINE)
+        self.map_scrollbar_thumb_rect = (x0, thumb_bottom, x1, thumb_bottom + thumb_height)
+        self.panel(x0 + 2, thumb_bottom, x1 - x0 - 4, thumb_height, (91, 113, 142), GOLD)
+
+    def map_scrollbar_thumb_at(self, x: int, y: int) -> bool:
+        return self.map_scrollbar_thumb_rect is not None and self._inside(x, y, self.map_scrollbar_thumb_rect)
+
+    def map_scrollbar_track_at(self, x: int, y: int) -> bool:
+        return self.map_scrollbar_thumb_rect is not None and self._inside(x, y, self.map_scrollbar_track_rect)
+
+    def map_scrollbar_drag_offset(self, y: int) -> int:
+        if self.map_scrollbar_thumb_rect is None:
+            return 0
+        return y - self.map_scrollbar_thumb_rect[1]
+
+    def map_scroll_from_thumb_bottom(self, thumb_bottom: int, floor_map: FloorOne | FloorTwo) -> int:
+        maximum = self.max_map_scroll(floor_map)
+        if maximum <= 0 or self.map_scrollbar_thumb_rect is None:
+            return 0
+        track_bottom, track_top = self.map_scrollbar_track_rect[1], self.map_scrollbar_track_rect[3]
+        thumb_height = self.map_scrollbar_thumb_rect[3] - self.map_scrollbar_thumb_rect[1]
+        usable_range = track_top - track_bottom - thumb_height
+        if usable_range <= 0:
+            return 0
+        position = max(0, min(usable_range, thumb_bottom - track_bottom))
+        return round(maximum * position / usable_range)
 
     def _draw_map_node(self, node, compact: bool = False, y_offset: int = 0) -> None:
         if compact:
