@@ -29,6 +29,9 @@ BRASS = (166, 121, 57)
 LEATHER = (62, 35, 32)
 MAP_NODE_HALF_HEIGHT = 58
 MAP_UNROLL_SECONDS = 0.85
+# Horizontal bounds used by the floor definitions when placing route nodes.
+MAP_LAYOUT_LEFT, MAP_LAYOUT_RIGHT = 330, 1410
+RELIC_COLUMN_WIDTH = 180
 
 
 @dataclass
@@ -63,7 +66,7 @@ class CampaignScreen(BattleScreen):
         self.character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_character_rects: dict[str, tuple[int, int, int, int]] = {}
         self.map_node_rects: dict[str, tuple[int, int, int, int]] = {}
-        self.map_viewport = (330, 80, 1410, 844)
+        self.map_viewport = (MAP_LAYOUT_LEFT + RELIC_COLUMN_WIDTH, 80, MAP_LAYOUT_RIGHT, 844)
         self._displayed_floor: FloorOne | FloorTwo | None = None
         self._unroll_started_at: float | None = None
         self.map_scrollbar_track_rect = (1380, 80, 1398, 830)
@@ -138,7 +141,9 @@ class CampaignScreen(BattleScreen):
         self.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, (35, 26, 24))
         self.map_node_rects.clear()
         self.map_character_rects.clear()
-        self.text(875, 919, floor_map.floor_title, 30, GOLD, centered=True)
+        left, bottom, right, top = self.map_viewport
+        map_center_x = (left + right) // 2
+        self.text(map_center_x, 919, floor_map.floor_title, 30, GOLD, centered=True)
         self.text(353, 925, f"코인 {coins}", 17, GOLD)
         if relic_ids:
             relic_names = " · ".join(RELIC_BY_ID[relic_id].name for relic_id in relic_ids[:5])
@@ -151,7 +156,6 @@ class CampaignScreen(BattleScreen):
         scroll_y = max(0, min(scroll_y, maximum))
         inset = self._map_unroll_inset(floor_map, monotonic())
         self._draw_scroll_paper(scroll_y, maximum, inset)
-        left, bottom, right, top = self.map_viewport
         bottom += inset
         top -= inset
         clip = p2d.SDL_Rect(round(left * SCALE_X), HEIGHT - round(top * SCALE_Y),
@@ -162,7 +166,8 @@ class CampaignScreen(BattleScreen):
             for source_id, target_id in floor_map.edges:
                 source, target = floor_map.nodes[source_id], floor_map.nodes[target_id]
                 color = SEPIA if source.cleared or target.unlocked else (134, 105, 76)
-                self.line(source.x, source.y - scroll_y, target.x, target.y - scroll_y, color)
+                self.line(self._map_node_x(source), source.y - scroll_y,
+                          self._map_node_x(target), target.y - scroll_y, color)
             for node in floor_map.nodes.values():
                 self._draw_map_node(node, scroll_y)
         finally:
@@ -175,7 +180,7 @@ class CampaignScreen(BattleScreen):
 
         hint = "휠 또는 왼쪽 버튼 드래그로 지도 이동 · 진행 가능한 노드를 선택하세요" if maximum else "진행 가능한 노드를 선택하세요"
         if notice or self.map_is_open(floor_map):
-            self.text(875, 20, notice[:62] or hint, 14, GOLD if notice else (211, 191, 163), centered=True)
+            self.text(map_center_x, 20, notice[:62] or hint, 14, GOLD if notice else (211, 191, 163), centered=True)
         if self.deck_preview_character_id:
             self._draw_deck_preview(
                 self.deck_preview_character_id,
@@ -306,8 +311,13 @@ class CampaignScreen(BattleScreen):
         position = max(0, min(usable_range, thumb_bottom - track_bottom))
         return round(maximum * position / usable_range)
 
+    def _map_node_x(self, node: MapNode) -> int:
+        left, _, right, _ = self.map_viewport
+        fraction = (node.x - MAP_LAYOUT_LEFT) / (MAP_LAYOUT_RIGHT - MAP_LAYOUT_LEFT)
+        return round(left + fraction * (right - left))
+
     def _draw_map_node(self, node: MapNode, scroll_y: int) -> None:
-        x, y = node.x, node.y - scroll_y
+        x, y = self._map_node_x(node), node.y - scroll_y
         bottom = max(self.map_viewport[1], y - MAP_NODE_HALF_HEIGHT)
         top = min(self.map_viewport[3], y + MAP_NODE_HALF_HEIGHT)
         if bottom >= top:
