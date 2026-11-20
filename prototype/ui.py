@@ -115,6 +115,13 @@ class BattleScreen:
             str(asset_root / "images" / "backgrounds" / "floor2_battle_background.png")
         )
         self.target_arrow = p2d.load_image(str(asset_root / "images" / "ui" / "target_arrow.png"))
+        timing_ui_root = asset_root / "images" / "ui" / "timing_judgement"
+        self.timing_ui_sprites = {
+            "panel": p2d.load_image(str(timing_ui_root / "panel_frame.png")),
+            "track": p2d.load_image(str(timing_ui_root / "gauge_track.png")),
+            "good": p2d.load_image(str(timing_ui_root / "good_zone.png")),
+            "perfect": p2d.load_image(str(timing_ui_root / "perfect_zone.png")),
+        }
         self.font_file = self._find_font()
         self.fonts = {size: p2d.load_font(self.font_file, size) for size in (9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28)}
         self.textures: dict[tuple[str, tuple[int, int, int], int], p2d.Image] = {}
@@ -245,6 +252,15 @@ class BattleScreen:
     def image(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
         scale = min(SCALE_X, SCALE_Y)
         image.draw(round(x * SCALE_X), round(y * SCALE_Y), round(w * scale), round(h * scale))
+
+    @staticmethod
+    def image_stretched(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
+        image.draw(
+            round((x + w / 2) * SCALE_X),
+            round((y + h / 2) * SCALE_Y),
+            round(w * SCALE_X),
+            round(h * SCALE_Y),
+        )
 
     @staticmethod
     def image_flipped_horizontally(image: p2d.Image, x: int, y: int, w: int, h: int) -> None:
@@ -959,7 +975,10 @@ class BattleScreen:
 
     def _draw_timing(self, battle: Battle, now: float) -> None:
         defending = battle.phase == "defense_timing"
-        self.panel(*TIMING_PANEL_RECT, (24, 30, 46), GOLD if defending else (111, 179, 197))
+        panel_x, panel_y, panel_w, panel_h = TIMING_PANEL_RECT
+        self.image_stretched(
+            self.timing_ui_sprites["panel"], panel_x, panel_y, panel_w, panel_h
+        )
         if defending:
             source = battle.incoming_source.name if battle.incoming_source else "적"
             skill = battle.incoming_skill.name if battle.incoming_skill else "공격"
@@ -991,19 +1010,42 @@ class BattleScreen:
                 prompt = "정확한 순간에 SPACE"
             self.text(TIMING_CENTER_X, 580, prompt, 15, TEXT, centered=True)
         self._timing_gauge(battle, now)
-        self.text(TIMING_CENTER_X, 478, "GOOD", 12, MUTED, centered=True)
+        self.text(TIMING_CENTER_X, 478, "GOOD", 12, MINT, centered=True)
 
     def _timing_gauge(self, battle: Battle, now: float) -> None:
         x, y, w, h = TIMING_GAUGE_X, 510, 400, 22
-        self.rect(x, y, w, h, (51, 58, 72))
+        self.image_stretched(self.timing_ui_sprites["track"], x, y, w, h)
         center_x = x + int(battle.timing_center * w)
         good_px = int(battle.good_window * w)
         perfect_px = int(battle.perfect_window * w)
-        self.rect(max(x, center_x - good_px), y, min(w, 2 * good_px), h, (158, 119, 60))
-        self.rect(max(x, center_x - perfect_px), y, min(w, 2 * perfect_px), h, (77, 164, 130))
+        good_left = max(x, center_x - good_px)
+        good_right = min(x + w, center_x + good_px)
+        self.image_stretched(
+            self.timing_ui_sprites["good"],
+            good_left,
+            y,
+            max(1, good_right - good_left),
+            h,
+        )
+        perfect_left = max(x, center_x - perfect_px)
+        perfect_right = min(x + w, center_x + perfect_px)
+        self.image_stretched(
+            self.timing_ui_sprites["perfect"],
+            perfect_left,
+            y,
+            max(1, perfect_right - perfect_left),
+            h,
+        )
         marker_x = x + int(battle.timing_progress(now) * w)
         self.line(marker_x, y - 6, marker_x, y + h + 6, (248, 246, 229))
-        self.text(TIMING_CENTER_X, 534, "PERFECT" if abs(marker_x - center_x) <= perfect_px else "", 12, MINT, centered=True)
+        self.text(
+            TIMING_CENTER_X,
+            534,
+            "PERFECT" if abs(marker_x - center_x) <= perfect_px else "",
+            12,
+            GOLD,
+            centered=True,
+        )
 
     def _draw_result(self, battle: Battle, now: float) -> None:
         elapsed = max(0.0, now - battle.result_started_at)
