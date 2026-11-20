@@ -1029,6 +1029,7 @@ class BattleScreen:
             self._draw_card_rect(
                 center_x, center_y, draw_w, draw_h, (31, 37, 50), inset=CARD_BACKGROUND_INSET
             )
+            self._draw_card_illustration(hero.unit_id, card, center_x, center_y, draw_w, draw_h)
 
             if progress >= 0.82 and visual_scale >= 0.65:
                 title_color = GOLD if focused else hero.accent
