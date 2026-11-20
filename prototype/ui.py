@@ -58,6 +58,33 @@ MINT = (112, 211, 178)
 CORAL = (231, 129, 119)
 BLUE = (116, 172, 226)
 
+CARD_ILLUSTRATION_FILES = {
+    "A": {
+        "정밀 타격": "A/precision_strike.png",
+        "연속 베기": "A/double_slash.png",
+        "제압": "A/suppression.png",
+        "빈틈 찌르기": "A/opening_stab.png",
+    },
+    "B": {
+        "급소 찌르기": "B/weak_point.png",
+        "회전 베기": "B/spinning_slash.png",
+        "집중": "B/focus.png",
+        "삼연 암습": "B/triple_ambush.png",
+    },
+    "C": {
+        "광휘": "C/radiance.png",
+        "치유의 파동": "C/healing_wave.png",
+        "수호의 타종": "C/guardian_bell.png",
+        "순환의 노래": "C/cycle_song.png",
+    },
+    "D": {
+        "흐름 베기": "D/flowing_slash.png",
+        "쌍섬": "D/twin_flash.png",
+        "강습": "D/assault.png",
+        "카르마": "D/karma.png",
+    },
+}
+
 
 @dataclass
 class CardMotion:
@@ -115,6 +142,13 @@ class BattleScreen:
         self.card_frames["enemy"] = p2d.load_image(
             str(asset_root / "images" / "card_frames" / "reditus_card_frame_enemy.png")
         )
+        self.card_illustrations = {
+            (character_id, card_name): p2d.load_image(
+                str(asset_root / "images" / "card_art" / relative_path)
+            )
+            for character_id, cards in CARD_ILLUSTRATION_FILES.items()
+            for card_name, relative_path in cards.items()
+        }
         self.action_cursor = 0
         self.target_enemy_id: str | None = None
         self.focus_actor_id: str | None = None
@@ -378,6 +412,24 @@ class BattleScreen:
         count = f"{card.hit_count}회" if card.hit_count > 1 else "홀드" if card.hold_to_judge else "1회"
         return f"×{card.power:.2f} · {count} · {card.short_effect()}"
 
+    def _draw_card_illustration(
+        self,
+        character_id: str,
+        card: SkillCard,
+        center_x: float,
+        center_y: float,
+        draw_w: int,
+        draw_h: int,
+    ) -> None:
+        illustration = self.card_illustrations.get((character_id, card.name))
+        if not illustration:
+            return
+        visual_bottom = center_y - draw_h / 2
+        art_width = round(draw_w * 0.88)
+        art_height = round(draw_h * 0.46)
+        art_center_y = visual_bottom + draw_h * 0.58
+        self.image(illustration, center_x, art_center_y, art_width, art_height)
+
     def _draw_skill_card_face(
         self,
         hero: PlayerCharacter,
@@ -396,6 +448,7 @@ class BattleScreen:
             (31, 37, 50),
             inset=round(CARD_BACKGROUND_INSET * visual_scale),
         )
+        self._draw_card_illustration(hero.unit_id, card, center_x, center_y, draw_w, draw_h)
         content_scale = visual_scale * CARD_LAYOUT_SCALE
         visual_bottom = center_y - draw_h / 2
         self.text(

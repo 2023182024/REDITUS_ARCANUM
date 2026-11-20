@@ -298,6 +298,9 @@ class CampaignScreen(BattleScreen):
             center_y = card_y + card_height / 2
             content_scale = card_height / 188
             self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
+            self._draw_card_illustration(
+                character_id, card, center_x, center_y, card_width, card_height
+            )
             self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
             lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
             description_y = card_y + (58 if len(lines) > 1 else 51) * content_scale
@@ -351,6 +354,9 @@ class CampaignScreen(BattleScreen):
             if index == cursor:
                 self._draw_card_rect(center_x, center_y, card_width, card_height, GOLD, inset=-5, filled=False)
             self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
+            self._draw_card_illustration(
+                character_id, card, center_x, center_y, card_width, card_height
+            )
             self.text(center_x, card_y + card_height + 18, source_name, 13, MUTED, centered=True)
             self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
             lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
