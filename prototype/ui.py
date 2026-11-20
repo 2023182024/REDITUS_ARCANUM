@@ -261,6 +261,8 @@ class BattleScreen:
         self.text(30, 922, "REDITUS ARCANUM", 34, TEXT)
         self.text(1214, 925, f"TURN  {battle.round:02d}", 22, GOLD)
         self.text(1215, 894, f"{floor_number}층  ·  BATTLE STAGE", 14, MUTED)
+        if battle.encounter_id == "floor2_boss" and battle.round == 1:
+            self.text(1215, 869, "보스 2회 행동", 13, CORAL)
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
         self.panel(x, y - 13, 55, 26, fill, fill)
@@ -412,6 +414,13 @@ class BattleScreen:
         count = f"{card.hit_count}회" if card.hit_count > 1 else "홀드" if card.hold_to_judge else "1회"
         return f"×{card.power:.2f} · {count} · {card.short_effect()}"
 
+    @staticmethod
+    def _card_description_lines(card: SkillCard, other_side: str = "적") -> list[str]:
+        if card.splash_ratio:
+            percent = int(card.splash_ratio * 100)
+            return [f"강공 · 피해 {percent}%", f"다른 {other_side} 1명"]
+        return textwrap.wrap(card.description, width=9)[:2] or [card.description]
+
     def _draw_card_illustration(
         self,
         character_id: str,
@@ -459,7 +468,7 @@ class BattleScreen:
             hero.accent,
             centered=True,
         )
-        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+        description_lines = self._card_description_lines(card)
         description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
         for line_index, line in enumerate(description_lines):
             self.text(
@@ -503,6 +512,9 @@ class BattleScreen:
             self.panel(x, 804, 164, 45, fill, border)
             color = actor.accent if actor.alive else MUTED
             label = actor.name.split(" · ", 1)[0] if actor.side == "player" else actor.name[:4]
+            if entry.actions_this_round > 1:
+                short_name = actor.name.split(" ", 1)[0]
+                label = f"{short_name} {entry.action_number}/{entry.actions_this_round}"
             self.text(x + 11, 832, label, 14, color)
             self.text(x + 11, 813, f"SPD {actor.effective_speed()}", 12, MUTED)
             self.text(x + 133, 825, f"d{entry.die}", 12, GOLD if active else MUTED, centered=True)
@@ -841,12 +853,19 @@ class BattleScreen:
                 source.accent,
                 centered=True,
             )
-            description_lines = textwrap.wrap(skill.description, width=9)[:2] or [skill.description]
-            description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
+            if skill.splash_ratio:
+                description_lines = [
+                    "느리고 강한 공격",
+                    f"피해 {int(skill.splash_ratio * 100)}%를 분산",
+                    "다른 아군 1명에게",
+                ]
+            else:
+                description_lines = textwrap.wrap(skill.description, width=9)[:2] or [skill.description]
+            description_start_y = visual_bottom + (68 if len(description_lines) > 2 else 58 if len(description_lines) > 1 else 51) * content_scale
             for line_index, line in enumerate(description_lines):
                 self.text(
                     center_x,
-                    description_start_y - line_index * 14 * content_scale,
+                    description_start_y - line_index * (13 if len(description_lines) > 2 else 14) * content_scale,
                     line,
                     max(9, round(11 * content_scale)),
                     TEXT,
@@ -872,6 +891,15 @@ class BattleScreen:
             target = battle.incoming_target.name if battle.incoming_target else "아군"
             self.text(720, 612, f"{source} · {skill}", 22, CORAL, centered=True)
             self.text(720, 580, f"{target} 방어 · 입력 성공 시 피해 50% 감소", 15, TEXT, centered=True)
+            if battle.incoming_skill and battle.incoming_skill.splash_ratio:
+                self.text(
+                    720,
+                    551,
+                    f"추가 피해 {int(battle.incoming_skill.splash_ratio * 100)}% · 다른 아군 1명",
+                    13,
+                    CORAL,
+                    centered=True,
+                )
         else:
             card = battle.selected_card
             target = battle.attack_target.name if battle.attack_target else "적"
@@ -919,14 +947,17 @@ class BattleScreen:
         result_image.opacify(1.0)
 
         units = (*battle.party, *battle.enemies)
-        target = next(
-            (unit for unit in units if unit.unit_id == battle.result_target_id),
-            None,
+        result_targets = (
+            (battle.result_target_id, battle.result_damage),
+            (battle.result_secondary_target_id, battle.result_secondary_damage),
         )
-        if target:
+        for target_id, damage in result_targets:
+            target = next((unit for unit in units if unit.unit_id == target_id), None)
+            if not target or target_id is None:
+                continue
             x, y = self._unit_position(battle, target)
             number_image = self._text_image(
-                "0" if battle.result_damage == 0 else f"-{battle.result_damage}",
+                "0" if damage == 0 else f"-{damage}",
                 battle.result_color,
                 30,
             )
@@ -1042,7 +1073,7 @@ class BattleScreen:
                     title_color,
                     centered=True,
                 )
-                description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+                description_lines = self._card_description_lines(card)
                 description_start_y = visual_bottom + (58 if len(description_lines) > 1 else 51) * content_scale
                 for line_index, line in enumerate(description_lines):
                     self.text(

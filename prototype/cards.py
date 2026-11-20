@@ -24,8 +24,11 @@ class SkillCard:
     stop_on_miss: bool = False
     hold_to_judge: bool = False
     effect_key: str | None = None
+    splash_ratio: float = 0.0
 
     def short_effect(self) -> str:
+        if self.splash_ratio:
+            return f"분산 {int(self.splash_ratio * 100)}%"
         if self.status_key:
             return {
                 "bleed": "출혈",
@@ -138,18 +141,18 @@ def enemy_skills(enemy_id: str) -> list[SkillCard]:
         ],
         "rune_reaper": [
             SkillCard("기록 절단", "방어 실패 시 쇠약", 0.96, 1.48, status_key="weak", status_amount=0.2),
-            SkillCard("룬 붕괴", "느리고 강한 공격", 1.34, 0.84),
+            SkillCard("룬 붕괴", "느리고 강한 공격 · 절반 피해를 다른 아군에게", 1.34, 0.84, splash_ratio=0.5),
             SkillCard("문장 흡수", "방어 실패 시 취약", 0.9, 1.3, status_key="vulnerable", status_amount=0.2),
         ],
         "frost_champion": [
             SkillCard("빙결 검무", "방어 실패 시 둔화", 1.0, 1.26, status_key="slow", status_amount=20, status_turns=2),
             SkillCard("서리 파열", "방어 실패 시 기절", 1.24, 0.9, status_key="stun"),
-            SkillCard("빙하 단죄", "느리고 강한 공격", 1.42, 0.78),
+            SkillCard("빙하 단죄", "느리고 강한 공격 · 절반 피해를 다른 아군에게", 1.42, 0.78, splash_ratio=0.5),
         ],
         "veil_archivist": [
             SkillCard("기억 봉인", "방어 실패 시 강박", 0.94, 1.5, status_key="rest_lock", status_turns=2),
             SkillCard("균열 기록", "방어 실패 시 취약", 1.08, 1.22, status_key="vulnerable", status_amount=0.22),
-            SkillCard("회랑 종언", "느리고 강한 보스 공격", 1.48, 0.82),
+            SkillCard("회랑 종언", "느리고 강한 공격 · 절반 피해를 다른 아군에게", 1.48, 0.82, splash_ratio=0.5),
         ],
     }
     if enemy_id in floor_two_skills:

@@ -15,6 +15,8 @@ from units import Combatant, Enemy, PlayerCharacter, create_enemies, create_part
 class TurnEntry:
     actor: Combatant
     die: int
+    action_number: int = 1
+    actions_this_round: int = 1
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,8 @@ class Battle:
         self.result_color = (240, 236, 218)
         self.result_target_id: str | None = None
         self.result_damage = 0
+        self.result_secondary_target_id: str | None = None
+        self.result_secondary_damage = 0
         self.result_started_at = 0.0
         self.attack_effect: AttackEffectState | None = None
         self.defense_effect: DefenseEffectState | None = None
@@ -133,6 +137,8 @@ class Battle:
         self.next_attack_bonus_pct: dict[str, float] = {}
         self._build_order()
         self._note("전투 시작 · 캐릭터별 덱에서 손패 3장을 뽑았습니다.")
+        if self.encounter_id == "floor2_boss":
+            self._note("1턴에 보스가 2회 행동합니다.")
         self._prepare_actor()
 
     @property
@@ -203,6 +209,18 @@ class Battle:
                 (entry.actor.unit_id for entry in self.order if isinstance(entry.actor, PlayerCharacter)),
                 None,
             )
+            if self.encounter_id == "floor2_boss":
+                boss_index = next(
+                    (index for index, entry in enumerate(self.order) if entry.actor.unit_id == "veil_archivist"),
+                    None,
+                )
+                if boss_index is not None:
+                    boss_entry = self.order[boss_index]
+                    boss_entry.actions_this_round = 2
+                    self.order.insert(
+                        boss_index + 1,
+                        TurnEntry(boss_entry.actor, boss_entry.die, 2, 2),
+                    )
             if "fortune_coin" in self.relic_ids and not self.fortune_coin_used and self.party:
                 favored = self.rng.choice(self.party)
                 favored_index = next(
@@ -262,7 +280,7 @@ class Battle:
                 self.selected_card = None
                 self._note(f"{actor.name}의 차례입니다. 카드를 고르거나 휴식하세요.")
                 return
-            if self.rng.random() < 0.12:
+            if entry.actions_this_round == 1 and self.rng.random() < 0.12:
                 self._note(f"{actor.name} · 전열을 살피며 행동을 멈췄습니다.")
                 self.order_index += 1
                 continue
@@ -499,7 +517,8 @@ class Battle:
                 hero.perfect_stacks += 1
             else:
                 hero.perfect_stacks = 0
-        self._show_result(quality, target, dealt)
+        secondary_target, secondary_damage = self._apply_splash(hero, target, dealt, card.splash_ratio)
+        self._show_result(quality, target, dealt, secondary_target, secondary_damage)
         self._note(
             f"{hero.name} · {card.name} {self.attack_hit_index + 1}/{card.hit_count} · "
             f"{quality} · {dealt} 피해 → {target.name}"
@@ -592,10 +611,31 @@ class Battle:
         if damage and quality == "MISS" and skill.status_key and target.alive:
             target.statuses.apply(skill.status_key, skill.status_turns, skill.status_amount)
             self._note(f"{target.name} · {skill.short_effect()} 상태가 적용되었습니다.")
-        self._show_result(quality, target, damage)
+        secondary_target, secondary_damage = self._apply_splash(source, target, damage, skill.splash_ratio)
+        self._show_result(quality, target, damage, secondary_target, secondary_damage)
         self.phase = "result"
         self.result_after = "actor"
         self.result_until = time.monotonic() + 0.9
+
+    def _apply_splash(
+        self,
+        source: Combatant,
+        primary_target: Combatant,
+        primary_damage: int,
+        splash_ratio: float,
+    ) -> tuple[Combatant | None, int]:
+        if primary_damage <= 0 or splash_ratio <= 0:
+            return None, 0
+        candidates = self.living_party if source.side == "enemy" else self.living_enemies
+        candidates = [target for target in candidates if target is not primary_target]
+        if not candidates:
+            return None, 0
+        secondary_target = self.rng.choice(candidates)
+        secondary_damage = self._receive_hit(secondary_target, primary_damage * splash_ratio)
+        self._note(
+            f"{source.name} · 피해 분산 {secondary_damage} → {secondary_target.name}"
+        )
+        return secondary_target, secondary_damage
 
     def _record_attack_effect(
         self, source: Combatant, target: Combatant, quality: str
@@ -608,10 +648,19 @@ class Battle:
             started_at=time.monotonic(),
         )
 
-    def _show_result(self, quality: str, target: Combatant, damage: int) -> None:
+    def _show_result(
+        self,
+        quality: str,
+        target: Combatant,
+        damage: int,
+        secondary_target: Combatant | None = None,
+        secondary_damage: int = 0,
+    ) -> None:
         self.result_quality = quality
         self.result_target_id = target.unit_id
         self.result_damage = damage
+        self.result_secondary_target_id = secondary_target.unit_id if secondary_target else None
+        self.result_secondary_damage = secondary_damage
         self.result_started_at = time.monotonic()
         self.result_color = {
             "PERFECT": (238, 204, 117),

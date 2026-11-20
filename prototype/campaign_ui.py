@@ -302,7 +302,7 @@ class CampaignScreen(BattleScreen):
                 character_id, card, center_x, center_y, card_width, card_height
             )
             self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
-            lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+            lines = self._card_description_lines(card)
             description_y = card_y + (58 if len(lines) > 1 else 51) * content_scale
             for line_index, line in enumerate(lines):
                 self.text(center_x, description_y - line_index * 14 * content_scale, line, round(11 * content_scale), TEXT, centered=True)
@@ -359,7 +359,7 @@ class CampaignScreen(BattleScreen):
             )
             self.text(center_x, card_y + card_height + 18, source_name, 13, MUTED, centered=True)
             self.text(center_x, card_y + card_height - 22 * content_scale, card.name, round(13 * content_scale), GOLD, centered=True)
-            lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+            lines = self._card_description_lines(card)
             description_y = card_y + (58 if len(lines) > 1 else 51) * content_scale
             for line_index, line in enumerate(lines):
                 self.text(center_x, description_y - line_index * 14 * content_scale, line, round(11 * content_scale), TEXT, centered=True)
@@ -417,7 +417,7 @@ class CampaignScreen(BattleScreen):
             CORAL,
             centered=True,
         )
-        description_lines = textwrap.wrap(card.description, width=9)[:2] or [card.description]
+        description_lines = self._card_description_lines(card)
         description_y = card_y + (58 if len(description_lines) > 1 else 51) * content_scale
         for line_index, line in enumerate(description_lines):
             self.text(
