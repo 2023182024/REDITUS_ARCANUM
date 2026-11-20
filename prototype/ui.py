@@ -301,6 +301,10 @@ class BattleScreen:
             self._draw_selected_target_card(battle, now)
         self._draw_returning_card_motions(battle, now)
         self._draw_keyword_tooltip()
+        if battle.phase == "round_intro":
+            center_x, center_y = DESIGN_WIDTH // 2, DESIGN_HEIGHT // 2
+            self.panel(center_x - 116, center_y - 40, 232, 80, PANEL, GOLD)
+            self.text(center_x, center_y, f"{battle.round}턴", 48, GOLD, centered=True)
         p2d.update_canvas()
 
     def _draw_chip(self, x: int, y: int, title: str, fill: tuple[int, int, int]) -> None:
@@ -543,7 +547,9 @@ class BattleScreen:
         visible_width = ORDER_LIST_RIGHT - ORDER_LIST_LEFT
         content_width = len(battle.order) * ORDER_ITEM_STEP - ORDER_ITEM_GAP
         maximum = max(0, content_width - visible_width)
-        current = battle.order[battle.order_index] if 0 <= battle.order_index < len(battle.order) else None
+        current = None
+        if battle.phase != "round_intro" and 0 <= battle.order_index < len(battle.order):
+            current = battle.order[battle.order_index]
         # Each action has its own entry, including consecutive actions by the same unit.
         if current is not self.order_focus_entry:
             self.order_focus_entry = current
@@ -578,7 +584,7 @@ class BattleScreen:
                 if x >= ORDER_LIST_RIGHT:
                     break
                 if x + ORDER_ITEM_WIDTH > ORDER_LIST_LEFT:
-                    active = index == battle.order_index and battle.phase not in ("victory", "defeat")
+                    active = entry is self.order_focus_entry and battle.phase not in ("victory", "defeat")
                     self._draw_order_entry(entry, x, middle - 22, active)
         finally:
             p2d.SDL_RenderSetClipRect(renderer, None)
@@ -1397,6 +1403,8 @@ class BattleScreen:
         return abs(x - enemy_x) <= 110 and enemy_y - 180 <= y <= enemy_y + 85
 
     def _sync_focus(self, battle: Battle) -> None:
+        if battle.phase == "round_intro":
+            self.focus_actor_id = None
         if battle.active and (battle.active.unit_id != self.focus_actor_id or battle.round != self.focus_round):
             self.returning_card_motions.clear()
             self.focus_actor_id = battle.active.unit_id

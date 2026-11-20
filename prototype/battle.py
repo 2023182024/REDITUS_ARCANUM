@@ -36,6 +36,7 @@ class DefenseEffectState:
 
 
 class Battle:
+    ROUND_INTRO_DURATION = 1.0
     ENEMY_SKILL_REVEAL_DURATION = 1.5
     MULTI_HIT_GAP = 0.42
     PLAYER_SPEED_SHIFT = 15
@@ -87,7 +88,6 @@ class Battle:
         self.round = 1
         self.order: list[TurnEntry] = []
         self.order_index = 0
-        self.phase = "player"
         self.active: PlayerCharacter | None = None
         self.selected_card: SkillCard | None = None
         self.attack_target: Enemy | None = None
@@ -135,11 +135,11 @@ class Battle:
         self.life_crystal_used_ids: set[str] = set()
         self.time_shard_used_ids: set[str] = set()
         self.next_attack_bonus_pct: dict[str, float] = {}
-        self._build_order()
         self._note("전투 시작 · 캐릭터별 덱에서 손패 3장을 뽑았습니다.")
         if self.encounter_id == "floor2_boss":
             self._note("1턴에 보스가 2회 행동합니다.")
-        self._prepare_actor()
+        if not self._check_battle_end():
+            self._begin_round()
 
     @property
     def living_enemies(self) -> list[Enemy]:
@@ -194,6 +194,14 @@ class Battle:
             self._queue_extra_action(target)
             self._note(f"시간의 파편 · {target.name}이 다음 행동을 얻었습니다.")
         return amount
+
+    def _begin_round(self) -> None:
+        self._build_order()
+        self.active = None
+        self.selected_card = None
+        self.phase = "round_intro"
+        self.round_intro_until = time.monotonic() + self.ROUND_INTRO_DURATION
+        self._note(f"{self.round}턴 시작 · 속도 순서가 정해졌습니다.")
 
     def _build_order(self) -> None:
         actors = [unit for unit in (*self.party, *self.enemies) if unit.alive]
@@ -262,8 +270,8 @@ class Battle:
                 if self._check_battle_end():
                     return
                 self.round += 1
-                self._build_order()
-                self._note(f"{self.round}턴 시작 · 속도 순서가 정해졌습니다.")
+                self._begin_round()
+                return
             entry = self.order[self.order_index]
             actor = entry.actor
             if not actor.alive:
@@ -670,7 +678,9 @@ class Battle:
 
     def update(self, now: float | None = None) -> None:
         current = time.monotonic() if now is None else now
-        if (
+        if self.phase == "round_intro" and current >= self.round_intro_until:
+            self._prepare_actor()
+        elif (
             self.phase == "enemy_skill_reveal"
             and current - self.enemy_skill_reveal_started_at >= self.ENEMY_SKILL_REVEAL_DURATION
         ):
