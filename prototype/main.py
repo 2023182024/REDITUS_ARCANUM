@@ -38,6 +38,7 @@ def main() -> None:
         battle: Battle | None = None
         active_node_id: str | None = None
         return_to_map_at: float | None = None
+        defeat_return_at: float | None = None
         map_notice = ""
         map_notice_until = 0.0
         campaign_decks: dict[str, list[SkillCard]] = {}
@@ -341,12 +342,16 @@ def main() -> None:
                                         campaign_roster = battle.party
                                     active_node_id = node_id
                                     return_to_map_at = None
+                                    defeat_return_at = None
                                     reward_coins_paid = False
                                     mode = "battle"
                     elif mode == "complete" and screen.floor_complete_clicked(x, y):
                         if floor_map and floor_map.floor_number == 1:
                             floor_map = FloorTwo()
                             map_scroll_y = 0
+                            for hero in campaign_roster:
+                                hero.hp = hero.max_hp
+                                hero.alive = True
                             mode = "map"
                             map_notice = "2층 · 망각의 서고에 진입했습니다."
                             map_notice_until = time.monotonic() + 4.0
@@ -481,7 +486,20 @@ def main() -> None:
             elif mode == "battle" and battle:
                 battle.update(now)
                 screen.draw(battle, now, floor_map.floor_number if floor_map else 1)
-                if battle.phase == "victory":
+                if battle.phase == "defeat":
+                    if defeat_return_at is None:
+                        defeat_return_at = now + 1.4
+                    elif now >= defeat_return_at:
+                        battle = None
+                        floor_map = None
+                        active_node_id = None
+                        selected_character_id = None
+                        campaign_roster.clear()
+                        campaign_decks.clear()
+                        relic_ids.clear()
+                        mode = "title"
+                        defeat_return_at = None
+                elif battle.phase == "victory":
                     if return_to_map_at is None:
                         return_to_map_at = now + 1.1
                         if not reward_coins_paid and active_node_id:

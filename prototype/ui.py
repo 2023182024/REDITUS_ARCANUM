@@ -210,7 +210,7 @@ class BattleScreen:
         background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
         self._draw_header(battle, floor_number)
         self._draw_order(battle)
-        self._draw_battlefield(battle, now)
+        self._draw_battlefield(battle, now, floor_number)
         self._draw_action_cards(battle, now)
         if battle.phase == "player" and battle.selected_card:
             self._draw_selected_target_card(battle, now)
@@ -403,7 +403,7 @@ class BattleScreen:
                 self.rect(x + 1, 805, 162, 43, INK)
                 self.text(x + 82, 825, "DOWN", 12, MUTED, centered=True)
 
-    def _draw_battlefield(self, battle: Battle, now: float) -> None:
+    def _draw_battlefield(self, battle: Battle, now: float, floor_number: int = 1) -> None:
         self.rect(28, 0, 1384, 778, (54, 66, 86), filled=False)
         self.text(48, 760, "전투", 16, MUTED)
         self.line(270, 187, 1170, 187, (44, 57, 77))
@@ -438,7 +438,7 @@ class BattleScreen:
         elif battle.phase == "victory":
             self._draw_end_card("전투 승리", f"{floor_number}층 맵으로 돌아갑니다.", True)
         elif battle.phase == "defeat":
-            self._draw_end_card("전투 종료", "파티를 정비하고 다시 시도하세요.", False)
+            self._draw_end_card("전투 종료", "파티 전멸 · 메인 화면으로 돌아갑니다.", False)
         elif battle.phase == "player" and battle.selected_card:
             target = self._focused_enemy(battle)
             if target:
@@ -834,8 +834,6 @@ class BattleScreen:
         self.panel(472, 462, 496, 174, (26, 32, 47), border)
         self.text(720, 585, title, 30, border, centered=True)
         self.text(720, 548, message, 16, TEXT, centered=True)
-        if not victory:
-            self.text(720, 503, "SPACE · 다시 전투", 16, GOLD, centered=True)
 
     def _draw_target_arrow(self, tip_x: int, y: int) -> None:
         """Show the outlined arrow image that marks the selected enemy."""
@@ -1005,14 +1003,11 @@ class BattleScreen:
             self.action_cursor = 5
 
     def handle_mouse_click(self, battle: Battle, x: int, y: int) -> None:
-        """Handle mouse selection, targeting, and retry actions."""
+        """Handle mouse selection and targeting."""
         self._sync_focus(battle)
         if battle.phase in ("attack_timing", "defense_timing", "hold_wait", "hold_timing", "multi_hit_pause"):
             return
         if battle.phase == "defeat":
-            battle.reset()
-            self.focus_actor_id = None
-            self.focus_round = None
             return
         if battle.phase != "player" or not battle.active:
             return
@@ -1117,10 +1112,6 @@ class BattleScreen:
                 battle.start_hold_timing()
             elif battle.phase in ("attack_timing", "defense_timing"):
                 battle.submit_timing()
-            elif battle.phase == "defeat":
-                battle.reset()
-                self.focus_actor_id = None
-                self.focus_round = None
             elif battle.phase == "player" and battle.active:
                 hero = battle.active
                 if battle.selected_card:

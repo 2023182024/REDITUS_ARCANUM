@@ -77,8 +77,7 @@ class Battle:
                 hero.hand.clear()
                 hero.discard.clear()
                 hero.draw(3)
-                hero.hp = hero.max_hp
-                hero.alive = True
+                hero.alive = hero.hp > 0
                 hero.statuses = StatusCollection()
                 hero.rested = False
                 hero.perfect_stacks = 0

@@ -167,8 +167,8 @@ class CampaignScreen(BattleScreen):
                 self.panel(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], PANEL, LINE)
                 self.circle(rect[0] + 64, rect[1] + 81, 28, PANEL_LIGHT, filled=True)
                 self.text(rect[0] + 64, rect[1] + 81, "+", 28, MUTED, centered=True)
-                self.text(rect[0] + 188, rect[1] + 95, "영입 대기 슬롯", 11, MUTED)
-                self.text(rect[0] + 188, rect[1] + 72, "동료 영입 후 표시", 9, MUTED)
+                self.text(rect[0] + 158, rect[1] + 95, "영입 대기 슬롯", 11, MUTED)
+                self.text(rect[0] + 158, rect[1] + 72, "동료 영입 후 표시", 9, MUTED)
         self.text(58, 87, f"층 진행  {floor_number} / 2", 13, GOLD)
         self.text(58, 66, "현재 프로토타입은 2층까지", 9, MUTED)
 
