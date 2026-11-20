@@ -263,12 +263,8 @@ class CampaignScreen(BattleScreen):
         self.text(node.x, drawn_y + title_offset, node.title, title_size, accent if state != "locked" else MUTED, centered=True)
         if node.kind == "start":
             status = "시작"
-        elif node.kind == "shop":
-            status = "상품 구매" if state == "available" else "완료" if state == "cleared" else "잠김"
-        elif node.kind == "reward":
-            status = "스킬 선택" if state == "available" else "완료" if state == "cleared" else "잠김"
         else:
-            kind_label = {"battle": "전투", "elite": "정예", "boss": "층 보스"}[node.kind]
+            kind_label = {"battle": "전투", "elite": "정예", "shop": "상점", "reward": "보상", "boss": "층 보스"}[node.kind]
             status_label = {"available": "진행 가능", "cleared": "완료", "locked": "잠김"}[state]
             status = f"{kind_label}  ·  {status_label}"
         self.text(node.x, drawn_y + status_offset, status, status_size, GOLD if state == "available" else MUTED, centered=True)
