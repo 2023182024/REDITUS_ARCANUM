@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 
 PLAYER_CARD_DAMAGE_SCALE = 0.5
+MAX_DECK_SIZE = 9
 
 
 @dataclass

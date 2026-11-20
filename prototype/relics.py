@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-MAX_RELICS = 4
+MAX_RELICS = 3
 
 
 @dataclass(frozen=True)

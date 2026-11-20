@@ -6,10 +6,10 @@ import textwrap
 
 from campaign import FloorOne, FloorTwo
 from campaign_economy import ShopOffer
-from cards import PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
+from cards import MAX_DECK_SIZE, PLAYER_CARD_DAMAGE_SCALE, SkillCard, starter_deck
 from relics import MAX_RELICS, RELIC_BY_ID
 from units import PlayerCharacter, character_info
-from ui import BattleScreen, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE, CORAL
+from ui import BattleScreen, CARD_W, DESIGN_HEIGHT, DESIGN_WIDTH, GOLD, HEIGHT, INK, LINE, MINT, MUTED, PANEL, PANEL_LIGHT, TEXT, WIDTH,BLUE, CORAL
 
 import pico2d as p2d
 
@@ -30,6 +30,8 @@ class CampaignScreen(BattleScreen):
         self.deck_preview_close_rect = (1315, 738, 1380, 784)
         self.reward_choice_rects: list[tuple[int, int, int, int]] = []
         self.reward_character_rects: list[tuple[int, int, int, int]] = []
+        self.card_replace_rects: list[tuple[int, int, int, int]] = []
+        self.card_replace_cancel_rect = (74, 115, 310, 170)
         self.shop_offer_rects: list[tuple[int, int, int, int]] = []
         self.shop_reroll_rect = (860, 112, 1090, 184)
         self.shop_leave_rect = (1120, 112, 1350, 184)
@@ -456,6 +458,8 @@ class CampaignScreen(BattleScreen):
             self.text(rect[0] + 145, rect[1] + 130, f"HP  {hero.hp}/{hero.max_hp}", 13, TEXT)
             self.text(rect[0] + 145, rect[1] + 105, f"ATK  {hero.attack}", 13, TEXT)
             self.text(rect[0] + 145, rect[1] + 80, f"SPD  {hero.effective_speed()}", 13, TEXT)
+            deck_count = len(hero.deck) + len(hero.hand) + len(hero.discard)
+            self.text(rect[0] + 145, rect[1] + 58, f"덱 {deck_count}/{MAX_DECK_SIZE}", 11, GOLD)
             self.text(rect[0] + 145, rect[1] + 36, "이 캐릭터의 덱에 추가", 11, GOLD if hovered else MUTED)
 
         self.text(720, 176, "캐릭터에 커서를 올려 강조 표시 · 클릭하여 덱에 추가", 14, MUTED, centered=True)
@@ -466,6 +470,72 @@ class CampaignScreen(BattleScreen):
             if self._inside(x, y, rect):
                 return index
         return None
+
+    def draw_card_replacement(
+        self,
+        hero: PlayerCharacter,
+        new_card: SkillCard,
+        source_name: str,
+        deck_cards: list[SkillCard],
+        cursor: int,
+        floor_number: int = 1,
+    ) -> None:
+        self._clear_page()
+        background = self.floor2_battle_background if floor_number >= 2 else self.battle_background
+        background.draw(WIDTH // 2, HEIGHT // 2, WIDTH, HEIGHT)
+        self.panel(38, 85, 1364, 790, (18, 24, 37), GOLD)
+        self.text(720, 835, "덱 한도 도달 · 교체할 카드 선택", 26, GOLD, centered=True)
+        self.text(720, 800, f"{hero.name}의 덱에서 카드 1장을 빼고 {new_card.name}을 추가합니다.  ({MAX_DECK_SIZE}장 제한)", 14, TEXT, centered=True)
+
+        preview_rect = (72, 280, 312, 710)
+        self.panel(preview_rect[0], preview_rect[1], preview_rect[2] - preview_rect[0], preview_rect[3] - preview_rect[1], PANEL_LIGHT, LINE)
+        self.text(192, 675, f"{source_name}에게서 획득", 13, CORAL, centered=True)
+        card_width = 170
+        card_height = round(card_width * 188 / 140)
+        card_x, card_y = 107, 345
+        center_x = card_x + card_width / 2
+        center_y = card_y + card_height / 2
+        scale = card_height / 188
+        self._draw_card_rect(center_x, center_y, card_width, card_height, (31, 37, 50), inset=8)
+        self.text(center_x, card_y + card_height - 22 * scale, new_card.name, round(13 * scale), GOLD, centered=True)
+        lines = textwrap.wrap(new_card.description, width=8)[:2] or [new_card.description]
+        description_y = card_y + (58 if len(lines) > 1 else 51) * scale
+        for index, line in enumerate(lines):
+            self.text(center_x, description_y - index * 14 * scale, line, round(11 * scale), TEXT, centered=True)
+        self.text(center_x, card_y + 20 * scale, f"×{new_card.power:.2f} · {new_card.short_effect()}", round(10 * scale), MINT, centered=True)
+        self.image(self.card_frames["enemy"], center_x, center_y, card_width, card_height)
+
+        self.card_replace_rects.clear()
+        card_width = 164
+        card_height = round(card_width * 188 / 140)
+        card_gap_x = 18
+        card_gap_y = 14
+        grid_width = card_width * 3 + card_gap_x * 2
+        first_x = 350 + (1050 - grid_width) // 2
+        first_y = 125
+        for index, card in enumerate(deck_cards):
+            row, column = divmod(index, 3)
+            x = first_x + column * (card_width + card_gap_x)
+            y = first_y + (2 - row) * (card_height + card_gap_y)
+            rect = (x, y, x + card_width, y + card_height)
+            self.card_replace_rects.append(rect)
+            if index == cursor:
+                self._draw_card_rect(x + card_width / 2, y + card_height / 2, card_width + 8, card_height + 8, GOLD, filled=False)
+            self._draw_skill_card_face(hero, card, x + card_width / 2, y + card_height / 2, card_width / CARD_W)
+
+        self.panel(*self.card_replace_cancel_rect[:2], self.card_replace_cancel_rect[2] - self.card_replace_cancel_rect[0], self.card_replace_cancel_rect[3] - self.card_replace_cancel_rect[1], PANEL_LIGHT, LINE)
+        self.text((self.card_replace_cancel_rect[0] + self.card_replace_cancel_rect[2]) / 2, 135, "취소", 15, MUTED, centered=True)
+        self.text(875, 112, "교체할 기존 카드를 클릭하세요", 13, MUTED, centered=True)
+        p2d.update_canvas()
+
+    def card_replace_at(self, x: int, y: int) -> int | None:
+        for index, rect in enumerate(self.card_replace_rects):
+            if self._inside(x, y, rect):
+                return index
+        return None
+
+    def card_replace_cancel_clicked(self, x: int, y: int) -> bool:
+        return self._inside(x, y, self.card_replace_cancel_rect)
 
     def draw_shop(
         self,

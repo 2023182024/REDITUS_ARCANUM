@@ -11,7 +11,7 @@ import pico2d as p2d
 from battle import Battle
 from campaign import FloorOne, FloorTwo
 from campaign_economy import STARTING_COINS, ShopOffer, victory_coins
-from cards import SkillCard, enemy_skills, player_reward_card, starter_deck
+from cards import MAX_DECK_SIZE, SkillCard, enemy_skills, player_reward_card, starter_deck
 from campaign_ui import CampaignScreen
 from shop import ShopSession
 from units import CHARACTER_DATA, PlayerCharacter, create_party
@@ -49,6 +49,8 @@ def main() -> None:
         reward_character_cursor = -1
         pending_reward_card: SkillCard | None = None
         pending_reward_source: str | None = None
+        pending_reward_target_id: str | None = None
+        card_replace_cursor = -1
         coins = STARTING_COINS
         relic_ids: list[str] = []
         campaign_roster: list[PlayerCharacter] = []
@@ -64,10 +66,11 @@ def main() -> None:
         reward_coins_paid = False
         running = True
 
-        def claim_reward(character_id: str) -> None:
+        def claim_reward(character_id: str, replace_index: int | None = None) -> None:
             nonlocal battle, active_node_id, mode, map_notice, map_notice_until
             nonlocal return_to_map_at, reward_options, reward_character_id, reward_cursor
             nonlocal reward_stage, reward_character_cursor, pending_reward_card, pending_reward_source
+            nonlocal pending_reward_target_id, card_replace_cursor
             nonlocal campaign_roster
             if (
                 not any(member.unit_id == character_id for member in campaign_roster)
@@ -80,11 +83,26 @@ def main() -> None:
             reward_card = pending_reward_card
             if character_id not in campaign_decks:
                 campaign_decks[character_id] = starter_deck(character_id)
-            campaign_decks[character_id].append(reward_card)
+            deck = campaign_decks[character_id]
             hero = next(
                 (member for member in campaign_roster if member.unit_id == character_id),
                 None,
             )
+            if len(deck) >= MAX_DECK_SIZE and replace_index is None:
+                pending_reward_target_id = character_id
+                card_replace_cursor = -1
+                mode = "card_replace"
+                return
+            if replace_index is not None:
+                if not 0 <= replace_index < len(deck):
+                    return
+                removed_card = deck.pop(replace_index)
+                if hero:
+                    for card_zone in (hero.hand, hero.discard, hero.deck):
+                        if removed_card in card_zone:
+                            card_zone.remove(removed_card)
+                            break
+            deck.append(reward_card)
             if hero:
                 hero.deck.append(reward_card)
             completed_node = active_node_id
@@ -108,6 +126,8 @@ def main() -> None:
             reward_character_cursor = -1
             pending_reward_card = None
             pending_reward_source = None
+            pending_reward_target_id = None
+            card_replace_cursor = -1
 
         def leave_shop() -> None:
             nonlocal mode, map_notice, map_notice_until, pending_relic_offer, active_node_id
@@ -206,6 +226,9 @@ def main() -> None:
                             screen.handle_key(battle, event.key)
                         elif mode == "shop":
                             leave_shop()
+                        elif mode == "card_replace":
+                            pending_reward_target_id = None
+                            mode = "reward"
                         elif mode == "relic_replace":
                             pending_relic_offer = None
                             mode = "shop"
@@ -249,6 +272,9 @@ def main() -> None:
                         )
                     elif mode == "battle" and battle:
                         screen.handle_mouse_move(battle, x, y)
+                    elif mode == "card_replace":
+                        replace_index = screen.card_replace_at(x, y)
+                        card_replace_cursor = replace_index if replace_index is not None else -1
                     elif mode == "reward":
                         if reward_stage == "card":
                             hover_index = screen.reward_choice_at(x, y)
@@ -375,6 +401,14 @@ def main() -> None:
                             if character_index is not None and character_index < len(campaign_roster):
                                 reward_character_cursor = character_index
                                 claim_reward(campaign_roster[character_index].unit_id)
+                    elif mode == "card_replace" and pending_reward_target_id:
+                        if screen.card_replace_cancel_clicked(x, y):
+                            pending_reward_target_id = None
+                            mode = "reward"
+                        else:
+                            replace_index = screen.card_replace_at(x, y)
+                            if replace_index is not None:
+                                claim_reward(pending_reward_target_id, replace_index)
                     elif mode == "level_up_result" and level_up_result:
                         if (
                             screen.level_up_result_confirm_clicked(x, y)
@@ -542,6 +576,20 @@ def main() -> None:
                         campaign_roster,
                         reward_character_cursor,
                         coins,
+                        floor_map.floor_number if floor_map else 1,
+                    )
+            elif mode == "card_replace" and pending_reward_target_id and pending_reward_card:
+                target_hero = next(
+                    (hero for hero in campaign_roster if hero.unit_id == pending_reward_target_id),
+                    None,
+                )
+                if target_hero:
+                    screen.draw_card_replacement(
+                        target_hero,
+                        pending_reward_card,
+                        pending_reward_source or "적",
+                        campaign_decks.get(pending_reward_target_id, []),
+                        card_replace_cursor,
                         floor_map.floor_number if floor_map else 1,
                     )
             elif mode == "complete":
